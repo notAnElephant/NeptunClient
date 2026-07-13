@@ -1,0 +1,18 @@
+export const hu = {
+  appName: 'Neptun',
+  home: 'Kezdőlap',
+  calendar: 'Naptár',
+  messages: 'Üzenetek',
+  more: 'Továbbiak',
+  exams: 'Vizsgák',
+  login: 'Bejelentkezés',
+  institution: 'Intézmény',
+  neptunCode: 'Neptun-kód',
+  password: 'Jelszó',
+  retry: 'Újrapróbálás',
+  refresh: 'Frissítés',
+  logout: 'Kijelentkezés',
+  empty: 'Nincs megjeleníthető adat.',
+  offline: 'Nincs hálózati kapcsolat. A legutóbbi mentett adatokat látod.',
+  incompatible: 'Az intézmény Neptun szolgáltatása nem a dokumentált formában válaszolt.',
+} as const;

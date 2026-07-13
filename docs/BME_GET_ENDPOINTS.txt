@@ -1,0 +1,122 @@
+# Generated from BME's deployed Neptun Angular bundles on 2026-07-11.
+# Relative to https://neptun.bme.hu/hallgatoi/api/
+# Static discovery only: contracts and authorization requirements vary.
+
+# Unauthenticated multi-institution verification, 2026-07-11.
+# Only General/EnvironmentData was validated as a public data endpoint.
+# Account/Authenticate, UserInfo, and MyTrainings were verified to exist, but
+# their authenticated behavior and compatibility were not tested.
+#
+# ELTE       https://hallgato2.neptun.elte.hu/api/
+# BGE        https://neptun16.uni-bge.hu/hallgato/api/
+# Corvinus   https://neptun3r.web.uni-corvinus.hu/Hallgatoi/api/
+# Semmelweis https://neptunweb.semmelweis.hu/hallgato/api/
+# SZTE       https://neptun.szte.hu/hallgato/api/
+# PTE        https://neptun-web3.tr.pte.hu/hallgato/api/
+# Miskolc    https://neptunweb1.uni-miskolc.hu/hallgato_ng/api/
+# SZE        https://neptun-hweb.sze.hu/hallgato_ng/api/
+# Debrecen   https://www-h-ng.neptun.unideb.hu/hallgato_ng/api/
+#
+# Routes whose presence was checked at every base:
+# General/EnvironmentData (public response verified)
+# Account/Authenticate     (route presence only)
+# UserInfo                 (route presence only)
+# MyTrainings              (route presence only)
+
+Account/GetForgottPasswordLinkIsValid
+Account/HasUserTokenRegistration
+Advancement/GetCertificateResults
+Advancement/GetGeneralTrainingData
+Advancement/GetOfficialRecordDetails
+Advancement/GetOfficialRecords
+Advancement/GetStudentCurriculumTemplates
+Advancement/GetStudentTakenSubjectsByTerm
+Advancement/GetStudentTrainingTermData
+Advancement/GetStudentTrainingTerms
+Advancement/GetStudyDetails
+Advancement/GetTermAveragesByTraining
+Advancement/GetTrainingPlan
+Calendar/GetAppointmentBookingDetails
+Calendar/GetAppointmentInvitationsDetails
+Calendar/GetCalendarEvents
+Calendar/GetCalendarPrintTemplateIds
+Calendar/GetConsultationDetails
+Calendar/GetCourseDetails
+Calendar/GetExamDetails
+Calendar/GetHolidayDetails
+Calendar/GetInstitutionalTimetables
+Calendar/GetMidTermTaskDetails
+Calendar/GetPeriodDetails
+Calendar/GetStudentTrainings
+Calendar/GetTermsForInstitutionalTimetable
+ContextUserProfile/GetCalendarSelectedTypes
+ContextUserProfile/GetCalendarSelectedView
+ContextUserProfile/GetFilter
+ContextUserProfile/GetSubjectSigninSelectedView
+Curriculum/GetCompletableCurriculumSubjects
+Curriculum/GetCurriculumSubjectGroupAndSubjectsData
+Curriculum/GetCurriculumSubjectsByTermData
+Curriculum/GetOptionalSubjectsWithoutCurriculum
+Curriculum/GetStudentCurriculumTemplates
+Curriculum/GetStudentCurriculumTemplatesBaseData
+Curriculum/GetSubjectGroupsAndSubjectsByCurriculumTemplate
+Dashboard/GetNumberOfTasksByType
+Dashboard/GetThreatLinesCount
+Exam/GetExamDetailExamConditions
+Exam/GetExamTutors
+ExamOverview/GetAvailableExamsCount
+ExamOverview/GetDashboardActualTermExamEntries
+ExamOverview/GetDashboardExamEntries
+ExamOverview/GetDashboardExamEntriesInActualTerm
+ExamRegistration/GetExamsList
+FinancialData/GetStudentPayInImpositionDetails
+FinancialItem/GetPaymentTypesForStudentImpositions
+FinancialItem/GetStudentImpositions
+FinancialItem/GetTermsForGetStudentImpositions
+General/EnvironmentData
+General/GetUserAvatar
+General/Institute
+ImpositionStatement/GetImpositionStatements
+Message/GetArchivedMessagePosts
+Message/GetDocumentationsTypeIds
+Message/GetMessageLimitSetting
+Message/GetMessagePdfForPrint
+Message/GetMessageRelatedSettings
+Message/GetMessageSendingSettings
+Message/GetPostPdfForPrint
+Message/GetReceivedArchivedMessages
+Message/GetReceivedMessages
+Message/GetSentMessages
+Message/GetUnreadedMessagesCount
+Messages/{messageId}/Posts
+Messages/Mandatories
+MyTrainings
+PersonalData/GetStudentLanguageExam
+PersonalData/GetStudentLanguageExamDetails
+PersonalData/GetStudentParallelTrainings
+PersonalData/GetTerms
+PersonalData/GetTermsByTrainingId
+PrintableTemplates/GetPrintCalendar
+PrintableTemplates/GetPrintRegisteredCoursesFormTypeId
+PrintableTemplates/GetPrintSubjectDetailsFormTypeId
+PrintableTemplates/GetStatementOfTakenSubjects
+RegistrySheet/GetStudentTrainingTermData
+RegistrySheet/GetTermIndependentAccreditedSubjects
+SubjectApplication/Curriculum
+SubjectApplication/GetScheduledCourses
+SubjectApplication/GetSubjectsCourses
+SubjectApplication/LanguagesForGivenTerm
+SubjectApplication/SubjectGroup
+SubjectApplication/SubjectTypes
+SubjectApplication/SystemParameters
+SubjectApplication/Terms
+SubjectCourse/GetCurriculumTemplates
+SubjectCourse/GetSubjectCourseTutors
+SubjectCourse/GetSubjectGroups
+SubjectCourse/GetSubjectPrerequirementDetails
+SubjectCourse/GetSubjectPrerequirementSubjects
+SubjectCourse/GetSubjectResult
+TakenSubjects/GetCoursesOfSignedSubjectForChanging
+TakenSubjects/GetTakenSubjects
+Tasks/GetMidTermTaskResults
+UserInfo
