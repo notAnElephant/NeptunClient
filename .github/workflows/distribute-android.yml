@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - ".github/**"
+      - "docs/**"
+      - "*.md"
 
 concurrency:
   group: android-preview-${{ github.ref }}
@@ -66,4 +70,5 @@ jobs:
             --app 1:881804148221:android:e6eba8a4001d4e9911ad94 \
             --project neptunclient-app \
             --groups internal-testers \
-            --release-notes "$RELEASE_NOTES"
+            --release-notes "$RELEASE_NOTES" 2>&1 | \
+            sed -E 's#https://firebaseappdistribution.googleapis.com/app-binary-downloads/[^[:space:]]+#<temporary-download-url-redacted>#g'

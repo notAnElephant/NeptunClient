@@ -52,5 +52,5 @@ final GitHub repository and organization are known.
 
 ## Links
 
-- [Firebase release](https://console.firebase.google.com/project/neptunclient-app/appdistribution/app/android:hu.neptun.companion/releases/6bo75t4htq38o)
-- [Tester installation page](https://appdistribution.firebase.google.com/testerapps/1:881804148221:android:e6eba8a4001d4e9911ad94/releases/6bo75t4htq38o)
+- [Firebase release](https://console.firebase.google.com/project/neptunclient-app/appdistribution/app/android:hu.neptun.companion/releases/6l81fkpn6ub48)
+- [Tester installation page](https://appdistribution.firebase.google.com/testerapps/1:881804148221:android:e6eba8a4001d4e9911ad94/releases/6l81fkpn6ub48)
