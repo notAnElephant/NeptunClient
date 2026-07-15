@@ -1,5 +1,5 @@
 import type { NeptunProvider } from '@/domain/provider';
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, ExternalLoginInput, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 
 function iso(days: number, hour: number, minute = 0): string { const value = new Date(); value.setDate(value.getDate() + days); value.setHours(hour, minute, 0, 0); return value.toISOString(); }
 
@@ -17,6 +17,7 @@ const exams: Exam[] = [{ id: 'exam-1', subject: 'Analízis 2', startsAt: iso(3, 
 
 export class DemoProvider implements NeptunProvider {
   async authenticate(_input: LoginInput): Promise<AuthResult> { return { state: 'authenticated', session: { institutionId: 'FI23344', provider: 'modern', userName: 'ABC123', activeTrainingId: 'training-1' } }; }
+  async authenticateExternal(_input: ExternalLoginInput): Promise<AuthResult> { throw new Error('Not used'); }
   async continueCaptcha(_input: CaptchaInput): Promise<AuthResult> { throw new Error('Not used'); }
   async continueTwoFactor(_input: TwoFactorInput): Promise<AuthResult> { throw new Error('Not used'); }
   async refreshSession(session: Session): Promise<Session> { return session; }

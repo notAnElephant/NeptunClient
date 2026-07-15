@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { posthog } from '@/config/posthog';
-import type { AuthResult, CaptchaInput, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CaptchaInput, ExternalLoginInput, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
 import type { NeptunProvider } from '@/domain/provider';
 import { createProvider } from '@/data/providerFactory';
 import { clearSecureSession, loadSecureSession, saveSecureSession, type ProviderSecret } from '@/data/secureSession';
@@ -31,6 +31,7 @@ interface SessionContextValue {
   reauthentication: ReauthenticationState;
   loginHint: LoginHint | null;
   login(input: LoginInput): Promise<void>;
+  loginExternal(input: ExternalLoginInput): Promise<void>;
   continueCaptcha(input: CaptchaInput): Promise<void>;
   continueTwoFactor(input: TwoFactorInput): Promise<void>;
   selectTraining(training: Training): Promise<void>;
@@ -133,6 +134,25 @@ export function SessionProvider({ children }: PropsWithChildren) {
       posthog.captureException(error instanceof Error ? error : new Error(String(error)));
       posthog.capture('login_failed');
       setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Sikertelen bejelentkezés.' });
+    }
+  }, [finishAuthentication]);
+
+  const loginExternal = useCallback(async (input: ExternalLoginInput) => {
+    setAuthFlow({ state: 'loading' });
+    const activeProvider = createProvider(input.institution);
+    providerRef.current = activeProvider;
+    setProvider(activeProvider);
+    try {
+      const result = await activeProvider.authenticateExternal(input);
+      if (result.state !== 'authenticated') throw new ProviderError('authentication', 'Az ELTE bejelentkezése nem fejeződött be.');
+      const nextSecret: ProviderSecret = { userName: result.session.userName, rememberMe: input.rememberMe === true };
+      secretRef.current = nextSecret;
+      setSecret(nextSecret);
+      await finishAuthentication(result, activeProvider, nextSecret);
+    } catch (error) {
+      posthog.captureException(error instanceof Error ? error : new Error(String(error)));
+      posthog.capture('login_failed', { institution_id: input.institution.id, authentication_mode: 'external' });
+      setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Az ELTE bejelentkezése sikertelen.' });
     }
   }, [finishAuthentication]);
 
@@ -268,7 +288,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setReauthenticationState({ state: 'idle' });
   }, [provider, session, setReauthenticationState]);
 
-  const value = useMemo(() => ({ ready, session, provider, authFlow, reauthentication, loginHint, login, continueCaptcha, continueTwoFactor, selectTraining, withAuthentication, beginManualReauthentication, logout, resetAuthFlow: () => setAuthFlow({ state: 'idle' }) }), [authFlow, beginManualReauthentication, continueCaptcha, continueTwoFactor, login, loginHint, logout, provider, ready, reauthentication, selectTraining, session, withAuthentication]);
+  const value = useMemo(() => ({ ready, session, provider, authFlow, reauthentication, loginHint, login, loginExternal, continueCaptcha, continueTwoFactor, selectTraining, withAuthentication, beginManualReauthentication, logout, resetAuthFlow: () => setAuthFlow({ state: 'idle' }) }), [authFlow, beginManualReauthentication, continueCaptcha, continueTwoFactor, login, loginExternal, loginHint, logout, provider, ready, reauthentication, selectTraining, session, withAuthentication]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

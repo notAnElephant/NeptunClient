@@ -1,5 +1,5 @@
 import type { NeptunProvider } from '@/domain/provider';
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, ExternalLoginInput, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { asArray, asRecord, booleanValue, stringValue, unwrapData } from './shared';
 import { mapModernMessageSummary } from './modernMessages';
@@ -28,18 +28,18 @@ export class ModernNeptunProvider implements NeptunProvider {
       if (Array.isArray(value)) value.forEach((item) => params.append(key, item));
       else if (value !== undefined) params.set(key, String(value));
     });
-    const response = await safeFetch(`${this.baseUrl}/${path}${params.size ? `?${params}` : ''}`, { headers: { Authorization: `Bearer ${this.accessToken}`, Accept: 'application/json' }, credentials: 'include' });
+    const response = await safeFetch(`${this.baseUrl}/${path}${params.size ? `?${params}` : ''}`, { headers: { Authorization: `Bearer ${this.accessToken}`, Accept: 'application/json' }, credentials: 'include', redirect: 'manual' });
     return unwrapData(await checkedJson(response));
   }
 
   private async submitLogin(pending: PendingLogin): Promise<AuthResult> {
     const response = await safeFetch(`${this.baseUrl}/Account/Authenticate`, {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      method: 'POST', credentials: 'include', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ userName: pending.input.userName.trim().toUpperCase(), password: pending.input.password, subtituteGUID: '', captcha: pending.captcha ?? '', captchaIdentifier: pending.captchaIdentifier ?? '', token: pending.token ?? '', LCID: 1038 }),
     });
     const data = asRecord(unwrapData(await checkedJson(response)));
     if (booleanValue(data, 'isCaptchaRequired')) {
-      const captchaResponse = await safeFetch(`${this.baseUrl}/captcha/image`, { headers: { Accept: 'application/json' }, credentials: 'include' });
+      const captchaResponse = await safeFetch(`${this.baseUrl}/captcha/image`, { headers: { Accept: 'application/json' }, credentials: 'include', redirect: 'manual' });
       const captcha = asRecord(unwrapData(await checkedJson(captchaResponse)));
       const identifier = stringValue(captcha, 'identifier');
       const content = stringValue(captcha, 'content');
@@ -55,12 +55,37 @@ export class ModernNeptunProvider implements NeptunProvider {
     return { state: 'authenticated', session: { institutionId: this.institution.id, provider: 'modern', userName: pending.input.userName.trim().toUpperCase(), accessToken, expiresAt: stringValue(data, 'refreshTokenExpiration') || undefined } };
   }
 
-  async authenticate(input: LoginInput): Promise<AuthResult> { this.pending = { input }; return this.submitLogin(this.pending); }
+  async authenticate(input: LoginInput): Promise<AuthResult> {
+    if (this.institution.authenticationMode === 'external') throw new ProviderError('unsupported-contract', 'Az ELTE jelszava csak az ELTE biztonságos bejelentkezési oldalán adható meg.');
+    this.pending = { input };
+    return this.submitLogin(this.pending);
+  }
+  async authenticateExternal(input: ExternalLoginInput): Promise<AuthResult> {
+    if (this.institution.authenticationMode !== 'external') throw new ProviderError('unsupported-contract', 'Ehhez az intézményhez nem külső bejelentkezés tartozik.');
+    const response = await safeFetch(`${this.baseUrl}/Account/OuterLogin`, {
+      method: 'POST', credentials: 'include', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ guid: input.guid }),
+    });
+    const data = asRecord(unwrapData(await checkedJson(response)));
+    const accessToken = stringValue(data, 'accessToken');
+    if (!accessToken) throw new ProviderError('authentication', 'Az ELTE bejelentkezési munkamenete nem váltható Neptun-hozzáférésre.');
+
+    const userInfoResponse = await safeFetch(`${this.baseUrl}/UserInfo`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }, credentials: 'include', redirect: 'manual',
+    });
+    const userInfo = asRecord(unwrapData(await checkedJson(userInfoResponse)));
+    const userName = stringValue(userInfo, 'neptunCode', 'NeptunCode').trim().toUpperCase();
+    if (!userName) throw new ProviderError('malformed-response', 'Az ELTE Neptun-válaszából hiányzik a Neptun-kód.');
+
+    this.accessToken = accessToken;
+    this.pending = undefined;
+    return { state: 'authenticated', session: { institutionId: this.institution.id, provider: 'modern', userName, accessToken, expiresAt: stringValue(data, 'refreshTokenExpiration') || undefined } };
+  }
   async continueCaptcha(input: CaptchaInput): Promise<AuthResult> { if (!this.pending) throw new ProviderError('authentication', 'A CAPTCHA-munkamenet lejárt.'); return this.submitLogin({ ...this.pending, captchaIdentifier: input.identifier, captcha: input.answer }); }
   async continueTwoFactor(input: TwoFactorInput): Promise<AuthResult> { if (!this.pending) throw new ProviderError('authentication', 'A kétlépcsős munkamenet lejárt.'); return this.submitLogin({ ...this.pending, token: input.code }); }
 
   async refreshSession(session: Session): Promise<Session> {
-    const response = await safeFetch(`${this.baseUrl}/Account/GetNewTokens`, { method: 'POST', credentials: 'include', headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, Accept: 'application/json' } });
+    const response = await safeFetch(`${this.baseUrl}/Account/GetNewTokens`, { method: 'POST', credentials: 'include', redirect: 'manual', headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, Accept: 'application/json' } });
     const data = asRecord(unwrapData(await checkedJson(response)));
     const accessToken = stringValue(data, 'accessToken');
     if (!accessToken) throw new ProviderError('authentication', 'A munkamenet nem frissíthető.');
@@ -69,7 +94,7 @@ export class ModernNeptunProvider implements NeptunProvider {
   }
 
   async logout(_session: Session): Promise<void> {
-    if (this.accessToken) await safeFetch(`${this.baseUrl}/account/logout`, { method: 'POST', credentials: 'include', headers: { Authorization: `Bearer ${this.accessToken}` } }).catch(() => undefined);
+    if (this.accessToken) await safeFetch(`${this.baseUrl}/account/logout`, { method: 'POST', credentials: 'include', redirect: 'manual', headers: { Authorization: `Bearer ${this.accessToken}` } }).catch(() => undefined);
     this.accessToken = undefined;
   }
 
@@ -85,7 +110,7 @@ export class ModernNeptunProvider implements NeptunProvider {
   }
   async selectTraining(trainingId: string): Promise<void> {
     const response = await safeFetch(`${this.baseUrl}/MyTrainings/${encodeURIComponent(trainingId)}`, {
-      method: 'POST', credentials: 'include', headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, Accept: 'application/json' },
+      method: 'POST', credentials: 'include', redirect: 'manual', headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, Accept: 'application/json' },
     });
     if (!response.ok) await checkedJson(response);
   }

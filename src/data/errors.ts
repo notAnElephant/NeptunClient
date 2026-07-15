@@ -7,7 +7,7 @@ export class ProviderError extends Error {
 
 export async function checkedJson(response: Response): Promise<unknown> {
   if (!response.ok) {
-    const code = response.status === 401 || response.status === 403 ? 'authentication' : response.status >= 500 ? 'server' : 'unsupported-contract';
+    const code = response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400) ? 'authentication' : response.status >= 500 ? 'server' : 'unsupported-contract';
     throw new ProviderError(code, `A Neptun szolgáltatás ${response.status} állapotkóddal válaszolt.`, response.status);
   }
   try { return await response.json(); }

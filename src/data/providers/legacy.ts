@@ -1,5 +1,5 @@
 import type { NeptunProvider } from '@/domain/provider';
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, ExternalLoginInput, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { parseNeptunDate, toLegacyDate } from '@/data/date';
 import { asArray, asRecord, booleanValue, stringValue } from './shared';
@@ -36,6 +36,8 @@ export class LegacyMobileProvider implements NeptunProvider {
     this.session = { institutionId: this.institution.id, provider: 'legacy', userName: this.credentials.userName };
     return { state: 'authenticated', session: this.session };
   }
+
+  async authenticateExternal(_input: ExternalLoginInput): Promise<AuthResult> { throw new ProviderError('unsupported-contract', 'Ehhez az intézményhez nem tartozik külső bejelentkezés.'); }
 
   async continueCaptcha(_input: CaptchaInput): Promise<AuthResult> { throw new ProviderError('unsupported-contract', 'A dokumentált régi szolgáltatás nem ad CAPTCHA-folytatási szerződést.'); }
   async continueTwoFactor(_input: TwoFactorInput): Promise<AuthResult> { throw new ProviderError('unsupported-contract', 'A dokumentált régi szolgáltatás nem ad kétlépcsős folytatási szerződést.'); }

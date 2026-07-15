@@ -1,4 +1,5 @@
 export type ProviderKind = 'modern' | 'legacy';
+export type AuthenticationMode = 'credentials' | 'external';
 
 export interface Institution {
   id: string;
@@ -7,6 +8,7 @@ export interface Institution {
   url: string | null;
   languages: string[];
   provider: ProviderKind;
+  authenticationMode: AuthenticationMode;
 }
 
 export interface Session {
@@ -40,6 +42,7 @@ export type ApiErrorCode = 'authentication' | 'connectivity' | 'unsupported-cont
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; code: ApiErrorCode; message: string; status?: number };
 
 export interface LoginInput { institution: Institution; userName: string; password: string; rememberMe?: boolean }
+export interface ExternalLoginInput { institution: Institution; guid: string; rememberMe?: boolean }
 export interface CaptchaInput { identifier: string; answer: string }
 export interface TwoFactorInput { code: string }
 export type AuthResult =

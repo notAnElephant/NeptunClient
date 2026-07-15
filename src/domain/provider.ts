@@ -1,7 +1,8 @@
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from './models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, ExternalLoginInput, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from './models';
 
 export interface NeptunProvider {
   authenticate(input: LoginInput): Promise<AuthResult>;
+  authenticateExternal(input: ExternalLoginInput): Promise<AuthResult>;
   continueCaptcha(input: CaptchaInput): Promise<AuthResult>;
   continueTwoFactor(input: TwoFactorInput): Promise<AuthResult>;
   refreshSession(session: Session): Promise<Session>;

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Institution } from '../../domain/models';
 import { ModernNeptunProvider } from './modern';
 
-const institution: Institution = { id: 'FI23344', omCode: 'FI23344', name: 'BME', url: 'https://example.test/api', languages: ['HU'], provider: 'modern' };
+const institution: Institution = { id: 'FI23344', omCode: 'FI23344', name: 'BME', url: 'https://example.test/api', languages: ['HU'], provider: 'modern', authenticationMode: 'credentials' };
+const externalInstitution: Institution = { ...institution, id: 'FI80798', omCode: 'FI80798', name: 'ELTE', authenticationMode: 'external' };
 const jsonResponse = (data: unknown) => new Response(JSON.stringify({ data }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
 function authenticatedProvider() {
@@ -37,6 +38,25 @@ describe('ModernNeptunProvider requests', () => {
     const result = await new ModernNeptunProvider(institution).authenticate({ institution, userName: 'abc123', password: 'secret' });
     expect(fetchMock.mock.calls[1][0]).toBe('https://example.test/api/captcha/image');
     expect(result).toEqual({ state: 'captchaRequired', identifier: 'captcha-1', imageUrl: 'data:image/png;base64,aW1hZ2U=' });
+  });
+
+  it('exchanges an ELTE outer-login GUID and identifies the signed-in account', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ accessToken: 'elte-token' }))
+      .mockResolvedValueOnce(jsonResponse({ name: 'Minta Elek', neptunCode: 'abc123' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await new ModernNeptunProvider(externalInstitution).authenticateExternal({ institution: externalInstitution, guid: '12345678-1234-1234-1234-123456789abc' });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://example.test/api/Account/OuterLogin', expect.objectContaining({ method: 'POST', body: JSON.stringify({ guid: '12345678-1234-1234-1234-123456789abc' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://example.test/api/UserInfo', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer elte-token' }) }));
+    expect(result).toEqual({ state: 'authenticated', session: { institutionId: 'FI80798', provider: 'modern', userName: 'ABC123', accessToken: 'elte-token' } });
+  });
+
+  it('never submits ELTE credentials to the direct authentication endpoint', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new ModernNeptunProvider(externalInstitution);
+    await expect(provider.authenticate({ institution: externalInstitution, userName: 'ABC123', password: 'secret' })).rejects.toMatchObject({ code: 'unsupported-contract' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('switches the server-side training context', async () => {
