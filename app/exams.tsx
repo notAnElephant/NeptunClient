@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { usePostHog } from 'posthog-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +10,12 @@ import { dateTime } from '@/components/Format';
 import { colors, spacing } from '@/theme';
 
 export default function ExamsScreen() {
+  const posthog = usePostHog();
   const query = useExams();
+
+  useEffect(() => {
+    posthog.capture('exams_viewed');
+  }, [posthog]);
   const grouped = useMemo(() => { const now = new Date(); const exams = query.data?.data ?? []; return { upcoming: exams.filter((item) => new Date(item.startsAt) >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt)), past: exams.filter((item) => new Date(item.startsAt) < now).sort((a, b) => b.startsAt.localeCompare(a.startsAt)) }; }, [query.data]);
   return <Screen title="Vizsgák" action={<Pressable onPress={() => router.back()} accessibilityLabel="Vissza"><Ionicons name="close" size={26} color={colors.navy} /></Pressable>} refreshing={query.isRefetching} onRefresh={() => query.refetch()}>
     {query.data?.cachedAt ? <CachedNotice savedAt={query.data.cachedAt} /> : null}{query.isLoading ? <LoadingState /> : query.error ? <ErrorState error={query.error} onRetry={() => query.refetch()} /> : !grouped.upcoming.length && !grouped.past.length ? <EmptyState message="Nincs megjeleníthető vizsga." /> : <><Text style={styles.section}>Közelgő</Text>{grouped.upcoming.map((exam) => <ExamRow key={exam.id} exam={exam} />)}<Text style={styles.section}>Korábbi</Text>{grouped.past.map((exam) => <ExamRow key={exam.id} exam={exam} />)}</>}

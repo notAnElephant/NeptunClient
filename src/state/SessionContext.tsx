@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { posthog } from '@/config/posthog';
 import type { AuthResult, CaptchaInput, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
 import type { NeptunProvider } from '@/domain/provider';
 import { createProvider } from '@/data/providerFactory';
@@ -85,6 +86,9 @@ export function SessionProvider({ children }: PropsWithChildren) {
         if (!(error instanceof ProviderError) || error.code !== 'authentication') throw error;
       });
       applyActiveSession(restored.session, restoredProvider, restored.secret);
+      posthog.identify(restored.session.userName, {
+        $set: { institution_id: restored.session.institutionId },
+      });
     }).catch(async () => {
       await clearSecureSession();
     }).finally(() => setReady(true));
@@ -103,6 +107,14 @@ export function SessionProvider({ children }: PropsWithChildren) {
     const persistedSecret = { ...nextSecret, accessToken: result.session.accessToken };
     await saveSecureSession(result.session, persistedSecret);
     applyActiveSession(result.session, activeProvider, persistedSecret);
+    posthog.identify(result.session.userName, {
+      $set: { institution_id: result.session.institutionId },
+      $set_once: { first_login_date: new Date().toISOString() },
+    });
+    posthog.capture('user_logged_in', {
+      institution_id: result.session.institutionId,
+      provider: result.session.provider,
+    });
     setAuthFlow({ state: 'idle' });
     setLoginHint(null);
     setReauthenticationState({ state: 'idle' });
@@ -117,7 +129,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setProvider(activeProvider);
     setSecret(nextSecret);
     try { await finishAuthentication(await activeProvider.authenticate(input), activeProvider, nextSecret); }
-    catch (error) { setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Sikertelen bejelentkezés.' }); }
+    catch (error) {
+      posthog.captureException(error instanceof Error ? error : new Error(String(error)));
+      posthog.capture('login_failed');
+      setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Sikertelen bejelentkezés.' });
+    }
   }, [finishAuthentication]);
 
   const recoverAuthentication = useCallback((): Promise<boolean> => {
@@ -210,6 +226,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const selectTraining = useCallback(async (training: Training) => {
     if (!session || !secret || !provider) return;
     await withAuthentication((activeProvider) => activeProvider.selectTraining(training.id));
+    posthog.capture('training_selected', { training_id: training.id });
     const updated = { ...session, activeTrainingId: training.id };
     const activeSecret = secretRef.current;
     sessionRef.current = updated;
@@ -218,6 +235,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [provider, secret, session, withAuthentication]);
 
   const beginManualReauthentication = useCallback(async () => {
+    posthog.capture('session_expired');
+    posthog.reset();
     const activeSession = sessionRef.current;
     if (activeSession) setLoginHint({ institutionId: activeSession.institutionId, userName: activeSession.userName });
     await clearSecureSession();
@@ -232,10 +251,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [setReauthenticationState]);
 
   const logout = useCallback(async () => {
+    posthog.capture('user_logged_out');
     const accountKey = session ? `${session.institutionId}:${session.userName}` : undefined;
     if (provider && session) await provider.logout(session).catch(() => undefined);
     if (accountKey) await clearCache(accountKey);
     await clearSecureSession();
+    posthog.reset();
     setSession(null);
     setProvider(null);
     setSecret(null);
