@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
-import type { AuthResult, CaptchaInput, Institution, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CaptchaInput, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
 import type { NeptunProvider } from '@/domain/provider';
 import { createProvider } from '@/data/providerFactory';
 import { clearSecureSession, loadSecureSession, saveSecureSession, type ProviderSecret } from '@/data/secureSession';
@@ -7,7 +7,12 @@ import { getInstitution } from '@/data/institutions';
 import { clearCache } from '@/data/cache';
 import { DemoProvider } from '@/data/providers/demo';
 
-type AuthFlow = { state: 'idle' } | { state: 'loading' } | { state: 'captchaRequired'; identifier: string; imageUrl?: string } | { state: 'twoFactorRequired'; challengeId?: string } | { state: 'error'; message: string };
+type AuthFlow =
+  | { state: 'idle' }
+  | { state: 'loading' }
+  | { state: 'captchaRequired'; identifier: string; imageUrl: string }
+  | { state: 'twoFactorRequired'; challengeId?: string }
+  | { state: 'error'; message: string };
 
 interface SessionContextValue {
   ready: boolean;
@@ -39,21 +44,30 @@ export function SessionProvider({ children }: PropsWithChildren) {
       setReady(true);
       return;
     }
-    loadSecureSession().then((restored) => {
-      if (restored) {
-        const institution = getInstitution(restored.session.institutionId);
-        if (institution) {
-          setSession(restored.session);
-          setSecret(restored.secret);
-          setProvider(createProvider(institution, restored));
-        }
-      }
+    loadSecureSession().then(async (restored) => {
+      if (!restored) return;
+      const institution = getInstitution(restored.session.institutionId);
+      if (!institution) return;
+      const restoredProvider = createProvider(institution, restored);
+      if (restored.session.activeTrainingId) await restoredProvider.selectTraining(restored.session.activeTrainingId);
+      setSession(restored.session);
+      setSecret(restored.secret);
+      setProvider(restoredProvider);
+    }).catch(async () => {
+      await clearSecureSession();
     }).finally(() => setReady(true));
   }, []);
 
   const finishAuthentication = useCallback(async (result: AuthResult, activeProvider: NeptunProvider, nextSecret: ProviderSecret) => {
-    if (result.state === 'captchaRequired') { setAuthFlow({ state: result.state, identifier: result.identifier, imageUrl: result.imageUrl }); return; }
-    if (result.state === 'twoFactorRequired') { setAuthFlow({ state: result.state, challengeId: result.challengeId }); return; }
+    if (result.state === 'captchaRequired') {
+      if (!result.imageUrl) throw new Error('A CAPTCHA-kép hiányzik.');
+      setAuthFlow({ state: result.state, identifier: result.identifier, imageUrl: result.imageUrl });
+      return;
+    }
+    if (result.state === 'twoFactorRequired') {
+      setAuthFlow({ state: result.state, challengeId: result.challengeId });
+      return;
+    }
     setSession(result.session);
     setProvider(activeProvider);
     setSecret(nextSecret);
@@ -86,18 +100,22 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [finishAuthentication, provider, secret]);
 
   const selectTraining = useCallback(async (training: Training) => {
-    if (!session || !secret) return;
+    if (!session || !secret || !provider) return;
+    await provider.selectTraining(training.id);
     const updated = { ...session, activeTrainingId: training.id };
     setSession(updated);
     await saveSecureSession(updated, secret);
-  }, [secret, session]);
+  }, [provider, secret, session]);
 
   const logout = useCallback(async () => {
     const accountKey = session ? `${session.institutionId}:${session.userName}` : undefined;
     if (provider && session) await provider.logout(session).catch(() => undefined);
     if (accountKey) await clearCache(accountKey);
     await clearSecureSession();
-    setSession(null); setProvider(null); setSecret(null); setAuthFlow({ state: 'idle' });
+    setSession(null);
+    setProvider(null);
+    setSecret(null);
+    setAuthFlow({ state: 'idle' });
   }, [provider, session]);
 
   const value = useMemo(() => ({ ready, session, provider, authFlow, login, continueCaptcha, continueTwoFactor, selectTraining, logout, resetAuthFlow: () => setAuthFlow({ state: 'idle' }) }), [authFlow, continueCaptcha, continueTwoFactor, login, logout, provider, ready, selectTraining, session]);

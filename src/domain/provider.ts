@@ -7,6 +7,7 @@ export interface NeptunProvider {
   refreshSession(session: Session): Promise<Session>;
   logout(session: Session): Promise<void>;
   getTrainings(): Promise<Training[]>;
+  selectTraining(trainingId: string): Promise<void>;
   getTerms(trainingId: string): Promise<Term[]>;
   getCalendar(query: CalendarQuery): Promise<CalendarEvent[]>;
   getMessages(query: MessageQuery): Promise<Page<MessageSummary>>;

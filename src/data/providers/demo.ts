@@ -22,6 +22,7 @@ export class DemoProvider implements NeptunProvider {
   async refreshSession(session: Session): Promise<Session> { return session; }
   async logout(_session: Session): Promise<void> {}
   async getTrainings(): Promise<Training[]> { return [{ id: 'training-1', name: 'Mérnökinformatikus BSc', code: 'BME-VIK' }]; }
+  async selectTraining(_trainingId: string): Promise<void> {}
   async getTerms(_trainingId: string): Promise<Term[]> { return [{ id: 'term-1', name: '2025/26/1', isActive: true }]; }
   async getCalendar(_query: CalendarQuery): Promise<CalendarEvent[]> { return events; }
   async getMessages(query: MessageQuery): Promise<Page<MessageSummary>> { const filtered = query.search ? messages.filter((message) => `${message.subject} ${message.sender}`.toLocaleLowerCase('hu').includes(query.search!.toLocaleLowerCase('hu'))) : messages; return { items: filtered, total: filtered.length }; }

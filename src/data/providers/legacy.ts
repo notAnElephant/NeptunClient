@@ -47,6 +47,8 @@ export class LegacyMobileProvider implements NeptunProvider {
     return asArray(data.TrainingList).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'Id', 'ID'), name: stringValue(row, 'Description', 'Name'), code: stringValue(row, 'Code') }; });
   }
 
+  async selectTraining(_trainingId: string): Promise<void> {}
+
   async getTerms(_trainingId: string): Promise<Term[]> {
     const data = await this.call('GetPeriodTerms');
     return asArray(data.PeriodTermsList).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'Id', 'ID'), name: stringValue(row, 'TermName', 'Name') }; });

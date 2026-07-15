@@ -1,10 +1,12 @@
 import type { NeptunProvider } from '@/domain/provider';
 import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, Term, Training, TwoFactorInput } from '@/domain/models';
-import { parseNeptunDate } from '@/data/date';
 import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { asArray, asRecord, booleanValue, stringValue, unwrapData } from './shared';
+import { mapModernMessageSummary } from './modernMessages';
+import { mapModernCalendarEvent, mapModernExams, mapModernMessageDetail } from './modernContract';
 
 type PendingLogin = { input: LoginInput; captchaIdentifier?: string; captcha?: string; token?: string };
+type QueryValue = string | number | boolean | readonly string[] | undefined;
 
 export class ModernNeptunProvider implements NeptunProvider {
   private accessToken?: string;
@@ -19,10 +21,13 @@ export class ModernNeptunProvider implements NeptunProvider {
     return this.institution.url.replace(/\/$/, '');
   }
 
-  private async request(path: string, query?: Record<string, string | number | undefined>): Promise<unknown> {
+  private async request(path: string, query?: Record<string, QueryValue>): Promise<unknown> {
     if (!this.accessToken) throw new ProviderError('authentication', 'A munkamenet lejárt. Jelentkezz be újra.');
     const params = new URLSearchParams();
-    Object.entries(query ?? {}).forEach(([key, value]) => { if (value !== undefined) params.set(key, String(value)); });
+    Object.entries(query ?? {}).forEach(([key, value]) => {
+      if (Array.isArray(value)) value.forEach((item) => params.append(key, item));
+      else if (value !== undefined) params.set(key, String(value));
+    });
     const response = await safeFetch(`${this.baseUrl}/${path}${params.size ? `?${params}` : ''}`, { headers: { Authorization: `Bearer ${this.accessToken}`, Accept: 'application/json' }, credentials: 'include' });
     return unwrapData(await checkedJson(response));
   }
@@ -34,9 +39,13 @@ export class ModernNeptunProvider implements NeptunProvider {
     });
     const data = asRecord(unwrapData(await checkedJson(response)));
     if (booleanValue(data, 'isCaptchaRequired')) {
-      const identifier = stringValue(data, 'captchaIdentifier');
+      const captchaResponse = await safeFetch(`${this.baseUrl}/captcha/image`, { headers: { Accept: 'application/json' }, credentials: 'include' });
+      const captcha = asRecord(unwrapData(await checkedJson(captchaResponse)));
+      const identifier = stringValue(captcha, 'identifier');
+      const content = stringValue(captcha, 'content');
+      if (!identifier || !content) throw new ProviderError('malformed-response', 'A Neptun CAPTCHA-válasza hiányos.');
       this.pending = { ...pending, captchaIdentifier: identifier };
-      return { state: 'captchaRequired', identifier, imageUrl: stringValue(data, 'captchaImageUrl', 'captchaUrl') || undefined };
+      return { state: 'captchaRequired', identifier, imageUrl: content.startsWith('data:') ? content : `data:image/png;base64,${content}` };
     }
     if (booleanValue(data, 'isTwoFactorRequired')) { this.pending = pending; return { state: 'twoFactorRequired', challengeId: stringValue(data, 'challengeId') || undefined }; }
     const accessToken = stringValue(data, 'accessToken');
@@ -65,33 +74,41 @@ export class ModernNeptunProvider implements NeptunProvider {
   }
 
   async getTrainings(): Promise<Training[]> {
-    return asArray(await this.request('MyTrainings')).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'studentTrainingId'), name: stringValue(row, 'trainingName'), code: stringValue(row, 'code'), faculty: stringValue(row, 'faculty'), isActive: booleanValue(row, 'isActual', 'isActive') }; });
+    return asArray(await this.request('MyTrainings')).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'studentTrainingId'), name: stringValue(row, 'trainingName'), code: stringValue(row, 'code'), faculty: stringValue(row, 'faculty') }; });
+  }
+  async selectTraining(trainingId: string): Promise<void> {
+    const response = await safeFetch(`${this.baseUrl}/MyTrainings/${encodeURIComponent(trainingId)}`, {
+      method: 'POST', credentials: 'include', headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, Accept: 'application/json' },
+    });
+    if (!response.ok) await checkedJson(response);
   }
   async getTerms(_trainingId: string): Promise<Term[]> {
     return asArray(await this.request('Advancement/GetStudentTrainingTerms')).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'value'), name: stringValue(row, 'text') }; });
   }
   async getCalendar(query: CalendarQuery): Promise<CalendarEvent[]> {
-    return asArray(await this.request('Calendar/GetCalendarEvents', { 'request.startDate': query.from, 'request.endDate': query.to, 'request.studentTrainingId': query.trainingId })).map((value) => { const row = asRecord(value); const rawType = stringValue(row, 'calendarEventType', 'type').toLowerCase(); return { id: stringValue(row, 'id', 'calendarEventId'), title: stringValue(row, 'name', 'title'), startsAt: parseNeptunDate(row.startDate ?? row.start), endsAt: parseNeptunDate(row.endDate ?? row.end), location: stringValue(row, 'location', 'roomName'), description: stringValue(row, 'description'), type: rawType.includes('exam') ? 'exam' : rawType.includes('task') ? 'task' : rawType.includes('course') ? 'course' : 'other' }; });
+    return asArray(await this.request('Calendar/GetCalendarEvents', {
+      startDate: query.from, endDate: query.to, studentTrainingIds: query.trainingId ? [query.trainingId] : [],
+      displayClasses: true, displayExams: true, displayOnlineMeetings: true, displayOtherEvents: true, displayPeriods: true, displayTasks: true,
+    })).map(mapModernCalendarEvent);
   }
   async getMessages(query: MessageQuery): Promise<Page<MessageSummary>> {
     const firstRow = query.cursor ? Number(query.cursor) : 0;
-    const lastRow = firstRow + query.pageSize - 1;
-    const data = asRecord(await this.request('Message/GetReceivedMessages', { firstRow, lastRow, filter: query.search }));
+    const lastRow = firstRow + query.pageSize;
+    const data = asRecord(await this.request('Message/GetReceivedMessages', { firstRow, lastRow, filterType: 0, subjectOrSenderNameFilter: query.search }));
     const values = data.receivedMessages ?? data.messages ?? [];
-    const items = asArray(values).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'messageId', 'id'), subject: stringValue(row, 'subject'), sender: stringValue(row, 'senderName', 'fromName', 'name'), sentAt: parseNeptunDate(row.sendDate ?? row.sentAt), preview: stringValue(row, 'preview', 'shortText'), isUnread: booleanValue(row, 'isUnread', 'isNew') }; });
-    return { items, nextCursor: items.length === query.pageSize ? String(lastRow + 1) : undefined };
+    const mapped = asArray(values).map(mapModernMessageSummary);
+    return { items: mapped.slice(0, query.pageSize), nextCursor: mapped.length > query.pageSize ? String(firstRow + query.pageSize) : undefined };
   }
   async getMessage(messageId: string): Promise<MessageDetail> {
-    const posts = asArray(await this.request(`Messages/${encodeURIComponent(messageId)}/Posts`));
-    if (!posts.length) throw new ProviderError('unsupported-contract', 'Az üzenet nem található.');
-    const first = asRecord(posts[0]);
-    const last = asRecord(posts[posts.length - 1]);
-    return { id: messageId, subject: stringValue(first, 'subject', 'messageSubject'), sender: stringValue(first, 'senderName', 'name'), sentAt: parseNeptunDate(first.sendDate ?? first.createdAt), preview: stringValue(first, 'shortText'), isUnread: booleanValue(first, 'isUnread'), body: stringValue(last, 'body', 'text', 'content').replace(/<[^>]+>/g, ' ').trim() };
+    try { return mapModernMessageDetail(messageId, await this.request(`Messages/${encodeURIComponent(messageId)}/Posts`, { messageId })); }
+    catch (error) {
+      if (error instanceof ProviderError) throw error;
+      throw new ProviderError('malformed-response', 'Az üzenet részletei nem értelmezhetők.');
+    }
   }
   async getUnreadMessageCount(): Promise<number> { const data = asRecord(await this.request('Message/GetUnreadedMessagesCount')); return Number(data.count ?? 0); }
   async getExams(query: ExamQuery): Promise<Exam[]> {
-    const data = await this.request('ExamRegistration/GetExamsList', { firstRow: 0, lastRow: 99, 'filter.termId': query.termId, 'filter.studentTrainingId': query.trainingId });
-    const rows = Array.isArray(data) ? data : asArray(asRecord(data).exams ?? asRecord(data).examEntries ?? []);
-    return rows.map((value) => { const row = asRecord(value); return { id: stringValue(row, 'examId', 'id'), subject: stringValue(row, 'subjectName', 'name'), startsAt: parseNeptunDate(row.startDate ?? row.examDate), location: stringValue(row, 'location', 'roomName'), result: stringValue(row, 'result'), status: stringValue(row, 'examType', 'status') }; });
+    const data = await this.request('ExamRegistration/GetExamsList', { 'sortAndPage.firstRow': 0, 'sortAndPage.lastRow': 9999, 'filter.termId': query.termId });
+    return mapModernExams(data);
   }
 }
