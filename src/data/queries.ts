@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '@/state/SessionContext';
 import type { CalendarEvent, Exam } from '@/domain/models';
 import { getLocallyReadMessageIds, markMessageReadLocally, readCache, writeCache } from './cache';
+import { calendarGridRange } from './date';
 import { ProviderError } from './errors';
 
 function useProvider() {
@@ -25,17 +26,11 @@ export function useTerms() {
   return useQuery({ queryKey: ['terms', session.institutionId, session.activeTrainingId], queryFn: () => withAuthentication((provider) => provider.getTerms(session.activeTrainingId ?? '')), enabled: Boolean(session.activeTrainingId), staleTime: 30 * 60_000 });
 }
 
-export function calendarRange(center = new Date()) {
-  const from = new Date(center); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - 7);
-  const to = new Date(center); to.setHours(23, 59, 59, 999); to.setDate(to.getDate() + 21);
-  return { from: from.toISOString(), to: to.toISOString() };
-}
-
 export function useCalendar(center = new Date()) {
   const { withAuthentication, session, accountKey } = useProvider();
-  const range = calendarRange(center);
+  const range = calendarGridRange(center);
   return useQuery({
-    queryKey: ['calendar', session.institutionId, session.activeTrainingId, range.from.slice(0, 10)],
+    queryKey: ['calendar', session.institutionId, session.activeTrainingId, range.from, range.to],
     queryFn: async () => {
       try { const data = await withAuthentication((provider) => provider.getCalendar({ ...range, trainingId: session.activeTrainingId })); await writeCache(accountKey, 'calendar', data); return { data, cachedAt: null as string | null }; }
       catch (error) { if (error instanceof ProviderError && error.code === 'authentication') throw error; const cached = await readCache<CalendarEvent[]>(accountKey, 'calendar'); if (cached) return { data: cached.data, cachedAt: cached.savedAt }; throw error; }
