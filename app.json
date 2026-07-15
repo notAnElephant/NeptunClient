@@ -26,7 +26,8 @@
           "faceIDPermission": "A Neptun munkamenet védelme"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
