@@ -18,6 +18,7 @@ export interface Session {
   activeTrainingId?: string;
 }
 
+export interface StudentProfile { name: string }
 export interface Training { id: string; name: string; code?: string; faculty?: string; isActive?: boolean }
 export interface Term { id: string; name: string; isActive?: boolean }
 export type CalendarEventType = 'course' | 'exam' | 'task' | 'other';
@@ -38,7 +39,7 @@ export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 export type ApiErrorCode = 'authentication' | 'connectivity' | 'unsupported-contract' | 'malformed-response' | 'server';
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; code: ApiErrorCode; message: string; status?: number };
 
-export interface LoginInput { institution: Institution; userName: string; password: string }
+export interface LoginInput { institution: Institution; userName: string; password: string; rememberMe?: boolean }
 export interface CaptchaInput { identifier: string; answer: string }
 export interface TwoFactorInput { code: string }
 export type AuthResult =

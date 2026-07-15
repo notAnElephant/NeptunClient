@@ -5,17 +5,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '@/components/Screen';
 import { DataRow } from '@/components/DataRow';
 import { CachedNotice } from '@/components/States';
-import { useCalendar, useExams, useUnreadCount } from '@/data/queries';
+import { useCalendar, useExams, useStudentProfile, useUnreadCount } from '@/data/queries';
+import { greetingFor } from '@/data/greeting';
+import { useSession } from '@/state/SessionContext';
 import { dateTime } from '@/components/Format';
 import { colors, spacing } from '@/theme';
 
 export default function HomeScreen() {
+  const { session } = useSession();
+  const profile = useStudentProfile();
   const calendar = useCalendar(); const exams = useExams(); const unread = useUnreadCount();
   const upcomingEvent = useMemo(() => calendar.data?.data.filter((event) => new Date(event.endsAt) >= new Date()).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0], [calendar.data]);
   const upcomingExam = useMemo(() => exams.data?.data.filter((exam) => new Date(exam.startsAt) >= new Date()).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0], [exams.data]);
   const refresh = () => Promise.all([calendar.refetch(), exams.refetch(), unread.refetch()]);
   const cachedAt = calendar.data?.cachedAt ?? exams.data?.cachedAt;
-  return <Screen title="Jó reggelt" action={<Pressable accessibilityLabel="Értesítések"><Ionicons name="notifications-outline" size={25} color={colors.navy} /></Pressable>} refreshing={calendar.isRefetching || exams.isRefetching || unread.isRefetching} onRefresh={refresh}>
+  return <Screen title={greetingFor(new Date(), profile.data?.name || session?.userName || '')} action={<Pressable accessibilityLabel="Értesítések"><Ionicons name="notifications-outline" size={25} color={colors.navy} /></Pressable>} refreshing={calendar.isRefetching || exams.isRefetching || unread.isRefetching} onRefresh={refresh}>
     <Text style={styles.today}>Ma</Text>{cachedAt ? <CachedNotice savedAt={cachedAt} /> : null}
     <DataRow icon="calendar-outline" label="Következő esemény" value={upcomingEvent?.title ?? 'Nincs közelgő esemény'} detail={upcomingEvent ? `${dateTime.format(new Date(upcomingEvent.startsAt))}${upcomingEvent.location ? ` · ${upcomingEvent.location}` : ''}` : undefined} onPress={() => router.push('/(tabs)/calendar')} />
     <DataRow icon="school-outline" label="Következő vizsga" value={upcomingExam?.subject ?? 'Nincs közelgő vizsga'} detail={upcomingExam ? dateTime.format(new Date(upcomingExam.startsAt)) : undefined} onPress={() => router.push('/exams')} />

@@ -1,5 +1,5 @@
 import type { NeptunProvider } from '@/domain/provider';
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, Term, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { parseNeptunDate, toLegacyDate } from '@/data/date';
 import { asArray, asRecord, booleanValue, stringValue } from './shared';
@@ -41,6 +41,10 @@ export class LegacyMobileProvider implements NeptunProvider {
   async continueTwoFactor(_input: TwoFactorInput): Promise<AuthResult> { throw new ProviderError('unsupported-contract', 'A dokumentált régi szolgáltatás nem ad kétlépcsős folytatási szerződést.'); }
   async refreshSession(session: Session): Promise<Session> { return session; }
   async logout(_session: Session): Promise<void> { this.credentials = undefined; this.session = undefined; }
+
+  async getStudentProfile(): Promise<StudentProfile> {
+    return { name: this.session?.userName ?? this.credentials?.userName ?? '' };
+  }
 
   async getTrainings(): Promise<Training[]> {
     const data = await this.call('GetTrainings');

@@ -1,5 +1,5 @@
 import type { NeptunProvider } from '@/domain/provider';
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, Term, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 
 function iso(days: number, hour: number, minute = 0): string { const value = new Date(); value.setDate(value.getDate() + days); value.setHours(hour, minute, 0, 0); return value.toISOString(); }
 
@@ -21,6 +21,7 @@ export class DemoProvider implements NeptunProvider {
   async continueTwoFactor(_input: TwoFactorInput): Promise<AuthResult> { throw new Error('Not used'); }
   async refreshSession(session: Session): Promise<Session> { return session; }
   async logout(_session: Session): Promise<void> {}
+  async getStudentProfile(): Promise<StudentProfile> { return { name: 'Minta Elek' }; }
   async getTrainings(): Promise<Training[]> { return [{ id: 'training-1', name: 'Mérnökinformatikus BSc', code: 'BME-VIK' }]; }
   async selectTraining(_trainingId: string): Promise<void> {}
   async getTerms(_trainingId: string): Promise<Term[]> { return [{ id: 'term-1', name: '2025/26/1', isActive: true }]; }

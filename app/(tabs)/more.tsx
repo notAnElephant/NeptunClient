@@ -14,7 +14,7 @@ export default function MoreScreen() {
   const { session, logout } = useSession(); const institution = session ? getInstitution(session.institutionId) : undefined; const accountKey = session ? `${session.institutionId}:${session.userName}` : '';
   return <Screen title="Továbbiak">
     <View style={styles.account}><View style={styles.avatar}><Ionicons name="person" size={24} color={colors.blue} /></View><View><Text style={styles.accountName}>{session?.userName}</Text><Text style={styles.accountDetail}>{institution?.name}</Text></View></View>
-    <Text style={styles.section}>TANULMÁNYOK</Text><SettingRow icon="school-outline" title="Vizsgák" detail="Közelgő és korábbi vizsgák" onPress={() => router.push('/exams')} />
+    <Text style={styles.section}>TANULMÁNYOK</Text><SettingRow icon="school-outline" title="Képzés" detail="Az aktív képzés módosítása" onPress={() => router.push('/training?change=1')} /><SettingRow icon="document-text-outline" title="Vizsgák" detail="Közelgő és korábbi vizsgák" onPress={() => router.push('/exams')} />
     <Text style={styles.section}>FIÓK ÉS ADATOK</Text><SettingRow icon="swap-horizontal-outline" title="Intézmény vagy fiók váltása" onPress={logout} /><SettingRow icon="trash-outline" title="Gyorsítótár törlése" detail="A mentett naptár- és összefoglaló adatok törlése" onPress={() => clearCache(accountKey)} /><SettingRow icon="shield-checkmark-outline" title="Adatvédelem" detail="A hitelesítési adatok csak ezen az eszközön tárolódnak" onPress={() => {}} /><SettingRow icon="log-out-outline" title="Kijelentkezés" onPress={logout} danger />
     <Text style={styles.version}>Neptun 0.1.0 · Csak olvasási hozzáférés</Text>
   </Screen>;

@@ -1,5 +1,5 @@
 import type { NeptunProvider } from '@/domain/provider';
-import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, Term, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { asArray, asRecord, booleanValue, stringValue, unwrapData } from './shared';
 import { mapModernMessageSummary } from './modernMessages';
@@ -71,6 +71,13 @@ export class ModernNeptunProvider implements NeptunProvider {
   async logout(_session: Session): Promise<void> {
     if (this.accessToken) await safeFetch(`${this.baseUrl}/account/logout`, { method: 'POST', credentials: 'include', headers: { Authorization: `Bearer ${this.accessToken}` } }).catch(() => undefined);
     this.accessToken = undefined;
+  }
+
+  async getStudentProfile(): Promise<StudentProfile> {
+    const data = asRecord(await this.request('UserInfo'));
+    const name = stringValue(data, 'name');
+    if (!name) throw new ProviderError('malformed-response', 'A hallgató neve hiányzik a Neptun válaszából.');
+    return { name };
   }
 
   async getTrainings(): Promise<Training[]> {

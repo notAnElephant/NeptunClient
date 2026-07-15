@@ -59,8 +59,10 @@ Feature code uses a shared `NeptunProvider` contract and never calls raw Neptun
 URLs. Provider-specific request formats, authentication, response envelopes, and
 normalization remain private to the modern and legacy adapters.
 
-Credentials and tokens are stored with Expo SecureStore. Calendar and dashboard
-summaries may be cached locally; message bodies are not persisted.
+Credentials and tokens are stored with Expo SecureStore only when the user opts
+to stay signed in. Otherwise they remain in memory for the current app session.
+Calendar and dashboard summaries may be cached locally; message bodies are not
+persisted.
 
 ## API documentation and attribution
 

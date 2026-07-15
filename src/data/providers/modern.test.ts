@@ -14,6 +14,21 @@ function authenticatedProvider() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('ModernNeptunProvider requests', () => {
+  it('loads the student name from UserInfo', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ name: 'Minta Elek', neptunCode: 'ABC123' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(authenticatedProvider().getStudentProfile()).resolves.toEqual({ name: 'Minta Elek' });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://example.test/api/UserInfo');
+  });
+
+  it('refreshes the bearer token after an authentication timeout', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accessToken: 'new-token', refreshTokenExpiration: '2026-08-01T00:00:00Z' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const refreshed = await authenticatedProvider().refreshSession({ institutionId: institution.id, provider: 'modern', userName: 'ABC123', accessToken: 'old-token' });
+    expect(fetchMock).toHaveBeenCalledWith('https://example.test/api/Account/GetNewTokens', expect.objectContaining({ method: 'POST' }));
+    expect(refreshed).toMatchObject({ accessToken: 'new-token', expiresAt: '2026-08-01T00:00:00Z' });
+  });
+
   it('fetches the CAPTCHA image after authentication requires it', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ isCaptchaRequired: true }))
