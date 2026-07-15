@@ -1,5 +1,8 @@
-export function greetingFor(date: Date, name: string): string {
-  const hour = date.getHours();
-  const greeting = hour < 10 ? 'Jó reggelt' : hour < 18 ? 'Jó napot' : 'Jó estét';
-  return `${greeting}, ${name}!`;
+export function defaultNickname(fullName: string): string {
+  const names = fullName.trim().split(/\s+/).filter(Boolean);
+  return names[1] ?? names[0] ?? '';
+}
+
+export function greetingFor(name: string): string {
+  return `Helló, ${name}`;
 }

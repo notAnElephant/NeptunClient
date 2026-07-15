@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { greetingFor } from './greeting';
+import { defaultNickname, greetingFor } from './greeting';
+
+describe('defaultNickname', () => {
+  it.each([
+    ['A B C', 'B'],
+    ['A B', 'B'],
+    ['A', 'A'],
+    ['  A   B  C ', 'B'],
+  ])('uses the first given-name component from %s', (fullName, expected) => {
+    expect(defaultNickname(fullName)).toBe(expected);
+  });
+});
 
 describe('greetingFor', () => {
-  it.each([
-    [new Date(2026, 6, 15, 9), 'Jó reggelt, Minta Elek!'],
-    [new Date(2026, 6, 15, 10), 'Jó napot, Minta Elek!'],
-    [new Date(2026, 6, 15, 18), 'Jó estét, Minta Elek!'],
-  ])('uses the local time of day', (date, expected) => {
-    expect(greetingFor(date, 'Minta Elek')).toBe(expected);
+  it('uses the preferred nickname', () => {
+    expect(greetingFor('B')).toBe('Helló, B');
   });
 });
