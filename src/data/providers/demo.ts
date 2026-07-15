@@ -9,7 +9,7 @@ const events: CalendarEvent[] = [
   { id: 'event-3', title: 'Fizika', startsAt: iso(0, 14), endsAt: iso(0, 15, 30), location: 'I épület, I.22', type: 'exam' },
 ];
 const messages: MessageDetail[] = [
-  { id: 'message-1', subject: 'Vizsgajegy beírás történt', sender: 'Neptun üzemeltetés', sentAt: iso(0, 9, 15), preview: 'Tisztelt Hallgató! Vizsgajegyet rögzítettünk.', body: 'Tisztelt Hallgató! Az Analízis 2 tárgyból vizsgajegyet rögzítettünk a Neptunban.', isUnread: true },
+  { id: 'message-1', subject: 'Vizsgajegy beírás történt', sender: 'Neptun üzemeltetés', sentAt: iso(0, 9, 15), preview: 'Tisztelt Hallgató! Vizsgajegyet rögzítettünk.', body: '<style>.notice { color: red; }</style><p><strong>Tisztelt Hallgató!</strong></p><p>Az Analízis 2 tárgyból vizsgajegyet rögzítettünk a Neptunban.</p><p><a href="https://neptun.bme.hu">Neptun megnyitása</a></p><script>alert("unsafe")</script>', isUnread: true },
   { id: 'message-2', subject: 'Tárgyfelvételi időszak', sender: 'Tanulmányi Osztály', sentAt: iso(-1, 14), preview: 'Megkezdődött a tárgyfelvételi időszak.', body: 'Megkezdődött a következő félévre vonatkozó tárgyfelvételi időszak.', isUnread: true },
   { id: 'message-3', subject: 'Rendszerkarbantartás', sender: 'Neptun üzemeltetés', sentAt: iso(-2, 12), preview: 'Tervezett karbantartás lesz a hétvégén.', body: 'A Neptun rendszerben tervezett karbantartás lesz a hétvégén.', isUnread: false },
 ];

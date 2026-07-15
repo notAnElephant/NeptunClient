@@ -36,6 +36,7 @@ export function mapModernMessageDetail(messageId: string, value: unknown): Messa
   const post = posts[posts.length - 1];
   const senderUserId = stringValue(post, 'senderUserId');
   const sender = asArray(data.recipients).map(asRecord).find((recipient) => stringValue(recipient, 'userId') === senderUserId);
+  const htmlText = stringValue(post, 'htmlText');
   return {
     id: messageId,
     subject: stringValue(messageData, 'subject'),
@@ -43,7 +44,7 @@ export function mapModernMessageDetail(messageId: string, value: unknown): Messa
     sentAt: parseNeptunDate(post.sendDate),
     preview: stringValue(post, 'plainTextPreview'),
     isUnread: posts.some((item) => !booleanValue(item, 'isRead')),
-    body: stringValue(post, 'htmlText').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+    body: htmlText || stringValue(post, 'plainTextPreview'),
   };
 }
 

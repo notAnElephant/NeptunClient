@@ -21,12 +21,12 @@ describe('modern Neptun contract normalization', () => {
       messageData: { subject: 'Important notice' },
       recipients: [{ userId: 'sender-1', printName: 'Registrar' }],
       posts: [
-        { senderUserId: 'sender-1', plainTextPreview: 'Hello', htmlText: '<p>Hello <strong>student</strong></p>', sendDate: '2026-07-13T11:00:00Z', isRead: false },
+        { senderUserId: 'sender-1', plainTextPreview: 'Hello', htmlText: '<style>.notice { color: red; }</style><p>Hello <strong>student</strong></p><script>alert(1)</script><a href="https://example.com">Open</a>', sendDate: '2026-07-13T11:00:00Z', isRead: false },
       ],
     });
     expect(result).toEqual({
       id: 'message-1', subject: 'Important notice', sender: 'Registrar', sentAt: '2026-07-13T11:00:00.000Z',
-      preview: 'Hello', isUnread: true, body: 'Hello student',
+      preview: 'Hello', isUnread: true, body: '<style>.notice { color: red; }</style><p>Hello <strong>student</strong></p><script>alert(1)</script><a href="https://example.com">Open</a>',
     });
   });
 
