@@ -16,6 +16,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:personal": "EXPO_PUBLIC_DISABLE_IOS_WIDGET=true expo prebuild --clean --platform ios && EXPO_PUBLIC_DISABLE_IOS_WIDGET=true expo run:ios",
     "web": "expo start --web",
     "distribute:android": "./scripts/distribute-android.sh",
     "typecheck": "tsc --noEmit",

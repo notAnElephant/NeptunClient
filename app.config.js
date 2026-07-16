@@ -10,14 +10,22 @@ const calendarWidget = {
   android: null,
 }
 
+const iosWidgetsDisabled = process.env.EXPO_PUBLIC_DISABLE_IOS_WIDGET === 'true'
+
 export default ({ config }) => ({
   ...config,
   plugins: [
     ...(config.plugins ?? []),
-    ['expo-widgets', {
-      groupIdentifier: 'group.hu.neptun.companion',
-      widgets: [calendarWidget],
-    }],
+    ...(iosWidgetsDisabled
+      ? []
+      : [
+          './plugins/withExpoWidgetsWithoutPush',
+          ['expo-widgets', {
+            groupIdentifier: 'group.hu.neptun.companion',
+            enablePushNotifications: false,
+            widgets: [calendarWidget],
+          }],
+        ]),
     ['react-native-android-widget', {
       widgets: [{
         name: 'CalendarWidget',
@@ -39,6 +47,7 @@ export default ({ config }) => ({
   ],
   extra: {
     ...config.extra,
+    iosWidgetsDisabled,
     posthogProjectKey: process.env.EXPO_PUBLIC_POSTHOG_PROJECT_KEY || config.extra?.posthogProjectKey,
     posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || config.extra?.posthogHost || 'https://eu.i.posthog.com',
   },

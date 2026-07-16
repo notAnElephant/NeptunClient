@@ -53,6 +53,25 @@ pnpm dlx eas-cli build --platform android --profile production
 Preview builds are distributed through Firebase App Distribution. See
 [the distribution guide](docs/APP_DISTRIBUTION.md).
 
+## iOS builds
+
+The calendar widget uses an App Group to share its timeline with the main app.
+App Groups require a paid Apple Developer Program team when installing on a
+physical device. Build the full app (including the widget) with:
+
+```sh
+pnpm ios --device "Device name"
+```
+
+For local testing with a free Personal Team, build the main app without the iOS
+widget target:
+
+```sh
+pnpm ios:personal --device "Device name"
+```
+
+The Android widget is unaffected by this iOS-only build mode.
+
 ## Architecture
 
 Feature code uses a shared `NeptunProvider` contract and never calls raw Neptun
