@@ -8,6 +8,8 @@ import { getInstitution } from '@/data/institutions';
 import { clearCache } from '@/data/cache';
 import { DemoProvider } from '@/data/providers/demo';
 import { ProviderError } from '@/data/errors';
+import { recordElteLoginDiagnostic } from '@/data/elteLoginDiagnostics';
+import { institutionAnalyticsProperties } from '@/config/analytics';
 
 type AuthFlow =
   | { state: 'idle' }
@@ -88,7 +90,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       });
       applyActiveSession(restored.session, restoredProvider, restored.secret);
       posthog.identify(restored.session.userName, {
-        $set: { institution_id: restored.session.institutionId },
+        $set: institutionAnalyticsProperties(restored.session.institutionId),
       });
     }).catch(async () => {
       await clearSecureSession();
@@ -109,11 +111,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
     await saveSecureSession(result.session, persistedSecret);
     applyActiveSession(result.session, activeProvider, persistedSecret);
     posthog.identify(result.session.userName, {
-      $set: { institution_id: result.session.institutionId },
+      $set: institutionAnalyticsProperties(result.session.institutionId),
       $set_once: { first_login_date: new Date().toISOString() },
     });
     posthog.capture('user_logged_in', {
-      institution_id: result.session.institutionId,
+      ...institutionAnalyticsProperties(result.session.institutionId),
       provider: result.session.provider,
     });
     setAuthFlow({ state: 'idle' });
@@ -132,7 +134,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     try { await finishAuthentication(await activeProvider.authenticate(input), activeProvider, nextSecret); }
     catch (error) {
       posthog.captureException(error instanceof Error ? error : new Error(String(error)));
-      posthog.capture('login_failed');
+      posthog.capture('login_failed', institutionAnalyticsProperties(input.institution.id));
       setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Sikertelen bejelentkezés.' });
     }
   }, [finishAuthentication]);
@@ -149,9 +151,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
       secretRef.current = nextSecret;
       setSecret(nextSecret);
       await finishAuthentication(result, activeProvider, nextSecret);
+      recordElteLoginDiagnostic('app_session_created');
     } catch (error) {
+      recordElteLoginDiagnostic('app_login_failed', {
+        errorType: error instanceof ProviderError ? error.code : error instanceof Error ? error.name : 'unknown',
+      });
       posthog.captureException(error instanceof Error ? error : new Error(String(error)));
-      posthog.capture('login_failed', { institution_id: input.institution.id, authentication_mode: 'external' });
+      posthog.capture('login_failed', institutionAnalyticsProperties(input.institution.id));
       setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Az ELTE bejelentkezése sikertelen.' });
     }
   }, [finishAuthentication]);

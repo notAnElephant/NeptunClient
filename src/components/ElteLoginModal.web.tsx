@@ -1,10 +1,11 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ElteLoginCallback } from '@/data/elteExternalAuth';
 import { colors, radius, spacing } from '@/theme';
 
 interface ElteLoginModalProps {
   visible: boolean;
   onCancel(): void;
-  onGuid(guid: string): void;
+  onComplete(callback: ElteLoginCallback): void;
   onError(message: string): void;
 }
 

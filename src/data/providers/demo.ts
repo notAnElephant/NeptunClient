@@ -1,5 +1,6 @@
 import type { NeptunProvider } from '@/domain/provider';
 import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, ExternalLoginInput, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
+import { matchesSearch } from '@/data/search';
 
 function iso(days: number, hour: number, minute = 0): string { const value = new Date(); value.setDate(value.getDate() + days); value.setHours(hour, minute, 0, 0); return value.toISOString(); }
 
@@ -27,7 +28,7 @@ export class DemoProvider implements NeptunProvider {
   async selectTraining(_trainingId: string): Promise<void> {}
   async getTerms(_trainingId: string): Promise<Term[]> { return [{ id: 'term-1', name: '2025/26/1', isActive: true }]; }
   async getCalendar(_query: CalendarQuery): Promise<CalendarEvent[]> { return events; }
-  async getMessages(query: MessageQuery): Promise<Page<MessageSummary>> { const filtered = query.search ? messages.filter((message) => `${message.subject} ${message.sender}`.toLocaleLowerCase('hu').includes(query.search!.toLocaleLowerCase('hu'))) : messages; return { items: filtered, total: filtered.length }; }
+  async getMessages(query: MessageQuery): Promise<Page<MessageSummary>> { const filtered = query.search ? messages.filter((message) => matchesSearch(`${message.subject} ${message.sender} ${message.preview ?? ''}`, query.search!)) : messages; return { items: filtered, total: filtered.length }; }
   async getMessage(messageId: string): Promise<MessageDetail> { const message = messages.find((item) => item.id === messageId); if (!message) throw new Error('Az üzenet nem található.'); return message; }
   async getUnreadMessageCount(): Promise<number> { return messages.filter((message) => message.isUnread).length; }
   async getExams(_query: ExamQuery): Promise<Exam[]> { return exams; }

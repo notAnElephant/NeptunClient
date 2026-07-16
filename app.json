@@ -35,6 +35,8 @@
     },
     "extra": {
       "router": {},
+      "posthogProjectKey": "phc_Chh2k7qEQWeEKrDi6TPkgqRsswexwRPi9h4sAz7nBRZH",
+      "posthogHost": "https://eu.i.posthog.com",
       "eas": {
         "projectId": "cb6432dc-cf52-4fc5-ac4b-dcf31c2a6282"
       }

@@ -4,21 +4,25 @@ import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { asArray, asRecord, booleanValue, stringValue, unwrapData } from './shared';
 import { mapModernMessageSummary } from './modernMessages';
 import { mapModernCalendarEvent, mapModernExams, mapModernMessageDetail } from './modernContract';
+import { recordElteLoginDiagnostic } from '../elteLoginDiagnostics';
+import { validateElteServiceUrl } from '../elteExternalAuth';
 
 type PendingLogin = { input: LoginInput; captchaIdentifier?: string; captcha?: string; token?: string };
 type QueryValue = string | number | boolean | readonly string[] | undefined;
 
 export class ModernNeptunProvider implements NeptunProvider {
   private accessToken?: string;
+  private serviceUrl?: string;
   private pending?: PendingLogin;
 
   constructor(private readonly institution: Institution) {}
 
-  hydrate(_session: Session, accessToken?: string): void { this.accessToken = accessToken; }
+  hydrate(session: Session, accessToken?: string): void { this.accessToken = accessToken; this.serviceUrl = session.serviceUrl; }
 
   private get baseUrl(): string {
-    if (!this.institution.url) throw new ProviderError('unsupported-contract', 'Az intézmény szolgáltatási címe hiányzik.');
-    return this.institution.url.replace(/\/$/, '');
+    const url = this.serviceUrl ?? this.institution.url;
+    if (!url) throw new ProviderError('unsupported-contract', 'Az intézmény szolgáltatási címe hiányzik.');
+    return url.replace(/\/$/, '');
   }
 
   private async request(path: string, query?: Record<string, QueryValue>): Promise<unknown> {
@@ -62,24 +66,32 @@ export class ModernNeptunProvider implements NeptunProvider {
   }
   async authenticateExternal(input: ExternalLoginInput): Promise<AuthResult> {
     if (this.institution.authenticationMode !== 'external') throw new ProviderError('unsupported-contract', 'Ehhez az intézményhez nem külső bejelentkezés tartozik.');
-    const response = await safeFetch(`${this.baseUrl}/Account/OuterLogin`, {
+    const serviceUrl = validateElteServiceUrl(input.serviceUrl);
+    if (!serviceUrl) throw new ProviderError('authentication', 'Az ELTE bejelentkezési visszahívási címe érvénytelen.');
+    this.serviceUrl = serviceUrl;
+    recordElteLoginDiagnostic('exchange_started');
+    const response = await safeFetch(`${serviceUrl}/Account/OuterLogin`, {
       method: 'POST', credentials: 'include', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ guid: input.guid }),
     });
+    recordElteLoginDiagnostic('exchange_response', { status: response.status, contentType: response.headers.get('content-type') });
     const data = asRecord(unwrapData(await checkedJson(response)));
     const accessToken = stringValue(data, 'accessToken');
+    recordElteLoginDiagnostic('exchange_parsed', { hasAccessToken: Boolean(accessToken) });
     if (!accessToken) throw new ProviderError('authentication', 'Az ELTE bejelentkezési munkamenete nem váltható Neptun-hozzáférésre.');
 
     const userInfoResponse = await safeFetch(`${this.baseUrl}/UserInfo`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }, credentials: 'include', redirect: 'manual',
     });
+    recordElteLoginDiagnostic('user_info_response', { status: userInfoResponse.status, contentType: userInfoResponse.headers.get('content-type') });
     const userInfo = asRecord(unwrapData(await checkedJson(userInfoResponse)));
     const userName = stringValue(userInfo, 'neptunCode', 'NeptunCode').trim().toUpperCase();
+    recordElteLoginDiagnostic('user_info_parsed', { hasUserName: Boolean(userName) });
     if (!userName) throw new ProviderError('malformed-response', 'Az ELTE Neptun-válaszából hiányzik a Neptun-kód.');
 
     this.accessToken = accessToken;
     this.pending = undefined;
-    return { state: 'authenticated', session: { institutionId: this.institution.id, provider: 'modern', userName, accessToken, expiresAt: stringValue(data, 'refreshTokenExpiration') || undefined } };
+    return { state: 'authenticated', session: { institutionId: this.institution.id, provider: 'modern', userName, accessToken, expiresAt: stringValue(data, 'refreshTokenExpiration') || undefined, serviceUrl } };
   }
   async continueCaptcha(input: CaptchaInput): Promise<AuthResult> { if (!this.pending) throw new ProviderError('authentication', 'A CAPTCHA-munkamenet lejárt.'); return this.submitLogin({ ...this.pending, captchaIdentifier: input.identifier, captcha: input.answer }); }
   async continueTwoFactor(input: TwoFactorInput): Promise<AuthResult> { if (!this.pending) throw new ProviderError('authentication', 'A kétlépcsős munkamenet lejárt.'); return this.submitLogin({ ...this.pending, token: input.code }); }

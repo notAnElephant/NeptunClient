@@ -1,37 +1,65 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView, type WebViewNavigation } from 'react-native-webview';
-import { ELTE_LOGIN_URL, extractElteLoginGuid } from '@/data/elteExternalAuth';
+import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
+import { ELTE_LOGIN_URL, ELTE_STUDENT_WEB_HANDOFF_SCRIPT, extractElteLoginCallback, shouldAttemptElteStudentWebHandoff, type ElteLoginCallback } from '@/data/elteExternalAuth';
+import { beginElteLoginDiagnostics, recordElteLoginDiagnostic, recordElteLoginNavigation } from '@/data/elteLoginDiagnostics';
 import { colors, spacing } from '@/theme';
 
 interface ElteLoginModalProps {
   visible: boolean;
   onCancel(): void;
-  onGuid(guid: string): void;
+  onComplete(callback: ElteLoginCallback): void;
   onError(message: string): void;
 }
 
-export function ElteLoginModal({ visible, onCancel, onGuid, onError }: ElteLoginModalProps) {
+type WebViewLoadEndEvent = Parameters<NonNullable<ComponentProps<typeof WebView>['onLoadEnd']>>[0];
+
+export function ElteLoginModal({ visible, onCancel, onComplete, onError }: ElteLoginModalProps) {
   const [loading, setLoading] = useState(true);
   const completedRef = useRef(false);
+  const handoffAttemptedRef = useRef(false);
+  const webViewRef = useRef<WebView>(null);
 
   useEffect(() => {
     if (visible) {
       completedRef.current = false;
+      handoffAttemptedRef.current = false;
       setLoading(true);
+      beginElteLoginDiagnostics();
     }
   }, [visible]);
 
   const handleNavigation = useCallback((request: WebViewNavigation) => {
-    const guid = extractElteLoginGuid(request.url);
-    if (!guid) return true;
+    recordElteLoginNavigation('navigation_requested', request.url);
+    const callback = extractElteLoginCallback(request.url);
+    if (!callback) return true;
     if (!completedRef.current) {
       completedRef.current = true;
-      onGuid(guid);
+      recordElteLoginDiagnostic('callback_detected');
+      onComplete(callback);
     }
     return false;
-  }, [onGuid]);
+  }, [onComplete]);
+
+  const handleLoadEnd = useCallback((event: WebViewLoadEndEvent) => {
+    setLoading(false);
+    recordElteLoginNavigation('load_finished', event.nativeEvent.url);
+    if (!handoffAttemptedRef.current && shouldAttemptElteStudentWebHandoff(event.nativeEvent.url)) {
+      handoffAttemptedRef.current = true;
+      recordElteLoginDiagnostic('student_web_handoff_started');
+      webViewRef.current?.injectJavaScript(ELTE_STUDENT_WEB_HANDOFF_SCRIPT);
+    }
+  }, []);
+
+  const handleMessage = useCallback((event: WebViewMessageEvent) => {
+    try {
+      const message = JSON.parse(event.nativeEvent.data) as { type?: string; found?: boolean };
+      if (message.type === 'elte-student-web-link') recordElteLoginDiagnostic('student_web_link_result', { found: message.found === true });
+    } catch {
+      recordElteLoginDiagnostic('student_web_message_invalid');
+    }
+  }, []);
 
   if (!visible) return null;
 
@@ -46,6 +74,7 @@ export function ElteLoginModal({ visible, onCancel, onGuid, onError }: ElteLogin
       </View>
       <View style={styles.webViewContainer}>
         <WebView
+          ref={webViewRef}
           source={{ uri: ELTE_LOGIN_URL }}
           originWhitelist={['https://*']}
           incognito
@@ -53,9 +82,15 @@ export function ElteLoginModal({ visible, onCancel, onGuid, onError }: ElteLogin
           thirdPartyCookiesEnabled={false}
           setSupportMultipleWindows={false}
           onShouldStartLoadWithRequest={handleNavigation}
-          onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
-          onError={() => onError('Az ELTE bejelentkezési oldala nem tölthető be.')}
+          onNavigationStateChange={(state) => recordElteLoginNavigation('navigation_changed', state.url)}
+          onLoadStart={(event) => { setLoading(true); recordElteLoginNavigation('load_started', event.nativeEvent.url); }}
+          onLoadEnd={handleLoadEnd}
+          onMessage={handleMessage}
+          onHttpError={(event) => recordElteLoginDiagnostic('http_error', { statusCode: event.nativeEvent.statusCode })}
+          onError={(event) => {
+            recordElteLoginDiagnostic('webview_error', { code: event.nativeEvent.code, domain: event.nativeEvent.domain });
+            onError('Az ELTE bejelentkezési oldala nem tölthető be.');
+          }}
           style={styles.webView}
         />
         {loading ? <View pointerEvents="none" style={styles.loading}><ActivityIndicator color={colors.blue} /></View> : null}

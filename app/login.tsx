@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect } from 'expo-router';
 import { ElteLoginModal } from '@/components/ElteLoginModal';
-import { institutions } from '@/data/institutions';
+import type { ElteLoginCallback } from '@/data/elteExternalAuth';
+import { institutionMatchesSearch, institutions } from '@/data/institutions';
 import type { Institution } from '@/domain/models';
 import { useSession } from '@/state/SessionContext';
 import { colors, radius, spacing } from '@/theme';
@@ -23,7 +24,7 @@ export default function LoginScreen() {
   const [externalError, setExternalError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const passwordInputRef = useRef<TextInput>(null);
-  const filtered = useMemo(() => institutions.filter((item) => item.name.toLocaleLowerCase('hu').includes(search.toLocaleLowerCase('hu'))), [search]);
+  const filtered = useMemo(() => institutions.filter((item) => institutionMatchesSearch(item, search)), [search]);
 
   const isExternalLogin = institution.authenticationMode === 'external';
   const isChallenge = authFlow.state === 'captchaRequired' || authFlow.state === 'twoFactorRequired';
@@ -40,10 +41,10 @@ export default function LoginScreen() {
     await login({ institution, userName, password, rememberMe });
   };
 
-  const finishExternalLogin = useCallback(async (guid: string) => {
+  const finishExternalLogin = useCallback(async (callback: ElteLoginCallback) => {
     setExternalLoginOpen(false);
     setExternalError(null);
-    await loginExternal({ institution, guid, rememberMe });
+    await loginExternal({ institution, ...callback, rememberMe });
   }, [institution, loginExternal, rememberMe]);
 
   const failExternalLogin = useCallback((message: string) => {
@@ -74,7 +75,7 @@ export default function LoginScreen() {
   </ScrollView></KeyboardAvoidingView>
   {Platform.OS === 'ios' ? <InputAccessoryView nativeID={LOGIN_KEYBOARD_ACCESSORY_ID}><View style={styles.keyboardToolbar}><Pressable accessibilityRole="button" onPress={Keyboard.dismiss} hitSlop={12}><Text style={styles.keyboardDone}>Kész</Text></Pressable></View></InputAccessoryView> : null}
   <Modal visible={pickerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPickerOpen(false)}><SafeAreaView style={styles.modal}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Intézmény választása</Text><Pressable onPress={() => setPickerOpen(false)}><Text style={styles.done}>Kész</Text></Pressable></View><View style={styles.search}><Ionicons name="search" size={20} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} style={styles.textField} placeholder="Keresés" /></View><FlatList keyboardShouldPersistTaps="handled" data={filtered} keyExtractor={(item) => item.id} renderItem={({ item }) => <Pressable style={styles.institutionRow} onPress={() => { setInstitution(item); setPickerOpen(false); }}><Text style={styles.institutionName}>{item.name}</Text>{item.id === institution.id ? <Ionicons name="checkmark" size={22} color={colors.blue} /> : null}</Pressable>} /></SafeAreaView></Modal>
-  <ElteLoginModal visible={externalLoginOpen} onCancel={() => setExternalLoginOpen(false)} onGuid={finishExternalLogin} onError={failExternalLogin} />
+  <ElteLoginModal visible={externalLoginOpen} onCancel={() => setExternalLoginOpen(false)} onComplete={finishExternalLogin} onError={failExternalLogin} />
   </SafeAreaView>;
 }
 

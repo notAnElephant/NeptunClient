@@ -2,6 +2,7 @@ import type { NeptunProvider } from '@/domain/provider';
 import type { AuthResult, CalendarEvent, CalendarQuery, CaptchaInput, Exam, ExamQuery, ExternalLoginInput, Institution, LoginInput, MessageDetail, MessageQuery, MessageSummary, Page, Session, StudentProfile, Term, Training, TwoFactorInput } from '@/domain/models';
 import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { parseNeptunDate, toLegacyDate } from '@/data/date';
+import { matchesSearch } from '@/data/search';
 import { asArray, asRecord, booleanValue, stringValue } from './shared';
 
 interface LegacyCredentials { userName: string; password: string }
@@ -69,7 +70,7 @@ export class LegacyMobileProvider implements NeptunProvider {
     const page = query.cursor ? Number(query.cursor) : 0;
     const data = await this.call('GetMessages', { CurrentPage: page });
     const all = asArray(data.MessagesList).map((value) => { const row = asRecord(value); return { id: stringValue(row, 'PersonMessageId', 'Id'), subject: stringValue(row, 'Subject'), sender: stringValue(row, 'Name', 'NeptunCode'), sentAt: parseNeptunDate(row.SendDate), preview: stringValue(row, 'Detail').replace(/<[^>]+>/g, ' ').trim(), isUnread: booleanValue(row, 'IsNew') }; });
-    const searched = query.search ? all.filter((item) => `${item.subject} ${item.sender} ${item.preview}`.toLocaleLowerCase('hu').includes(query.search!.toLocaleLowerCase('hu'))) : all;
+    const searched = query.search ? all.filter((item) => matchesSearch(`${item.subject} ${item.sender} ${item.preview}`, query.search!)) : all;
     return { items: searched.slice(0, query.pageSize), nextCursor: searched.length >= query.pageSize ? String(page + 1) : undefined, total: typeof data.TotalRowCount === 'number' ? data.TotalRowCount : undefined };
   }
 

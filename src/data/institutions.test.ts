@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { institutions } from './institutions';
+import { institutionMatchesSearch, institutions } from './institutions';
 
 describe('institution configuration', () => {
   it('gives every documented institution the same normalized shape', () => {
@@ -14,5 +14,18 @@ describe('institution configuration', () => {
   });
   it('does not attach user-facing support tiers', () => {
     for (const item of institutions) expect(item).not.toHaveProperty('verified');
+  });
+  it('finds BME and ELTE by their common abbreviations', () => {
+    const bme = institutions.find((item) => item.omCode === 'FI23344')!;
+    const elte = institutions.find((item) => item.omCode === 'FI80798')!;
+    expect(institutionMatchesSearch(bme, 'bme')).toBe(true);
+    expect(institutionMatchesSearch(elte, 'ELTE')).toBe(true);
+    expect(institutionMatchesSearch(bme, 'elte')).toBe(false);
+  });
+  it('finds institution names without accents', () => {
+    const bme = institutions.find((item) => item.omCode === 'FI23344')!;
+    const elte = institutions.find((item) => item.omCode === 'FI80798')!;
+    expect(institutionMatchesSearch(elte, 'Eotvos Lorand')).toBe(true);
+    expect(institutionMatchesSearch(bme, 'muszaki es gazdasagtudomanyi')).toBe(true);
   });
 });

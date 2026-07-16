@@ -45,10 +45,10 @@ describe('ModernNeptunProvider requests', () => {
       .mockResolvedValueOnce(jsonResponse({ accessToken: 'elte-token' }))
       .mockResolvedValueOnce(jsonResponse({ name: 'Minta Elek', neptunCode: 'abc123' }));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await new ModernNeptunProvider(externalInstitution).authenticateExternal({ institution: externalInstitution, guid: '12345678-1234-1234-1234-123456789abc' });
-    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://example.test/api/Account/OuterLogin', expect.objectContaining({ method: 'POST', body: JSON.stringify({ guid: '12345678-1234-1234-1234-123456789abc' }) }));
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://example.test/api/UserInfo', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer elte-token' }) }));
-    expect(result).toEqual({ state: 'authenticated', session: { institutionId: 'FI80798', provider: 'modern', userName: 'ABC123', accessToken: 'elte-token' } });
+    const result = await new ModernNeptunProvider(externalInstitution).authenticateExternal({ institution: externalInstitution, guid: '12345678-1234-1234-1234-123456789abc', serviceUrl: 'https://hallgato5.neptun.elte.hu/api' });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://hallgato5.neptun.elte.hu/api/Account/OuterLogin', expect.objectContaining({ method: 'POST', body: JSON.stringify({ guid: '12345678-1234-1234-1234-123456789abc' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://hallgato5.neptun.elte.hu/api/UserInfo', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer elte-token' }) }));
+    expect(result).toEqual({ state: 'authenticated', session: { institutionId: 'FI80798', provider: 'modern', userName: 'ABC123', accessToken: 'elte-token', serviceUrl: 'https://hallgato5.neptun.elte.hu/api' } });
   });
 
   it('never submits ELTE credentials to the direct authentication endpoint', async () => {
