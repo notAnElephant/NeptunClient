@@ -2,6 +2,11 @@ name: Build and distribute Android preview
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version to deploy (X.Y.Z); must be newer than the latest release"
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -11,18 +16,29 @@ on:
       - "*.md"
 
 concurrency:
-  group: android-preview-${{ github.ref }}
-  cancel-in-progress: true
+  group: android-preview
+  cancel-in-progress: false
 
 jobs:
   verify-build-distribute:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve deployment version
+        id: version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version || '' }}
+        run: |
+          VERSION="$(node scripts/resolve-deploy-version.mjs "$REQUESTED_VERSION" --write)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Deploying version $VERSION"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -64,7 +80,7 @@ jobs:
 
       - name: Distribute to Firebase testers
         env:
-          RELEASE_NOTES: ${{ github.event.head_commit.message || format('Manual build from {0}', github.sha) }}
+          RELEASE_NOTES: ${{ format('Neptun {0} — {1}', steps.version.outputs.version, github.event.head_commit.message || format('Manual build from {0}', github.sha)) }}
         run: |
           pnpm dlx firebase-tools appdistribution:distribute NeptunClient-preview.apk \
             --app 1:881804148221:android:e6eba8a4001d4e9911ad94 \
@@ -72,3 +88,12 @@ jobs:
             --groups internal-testers \
             --release-notes "$RELEASE_NOTES" 2>&1 | \
             sed -E 's#https://firebaseappdistribution.googleapis.com/app-binary-downloads/[^[:space:]]+#<temporary-download-url-redacted>#g'
+
+      - name: Record deployed version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "v$VERSION" --message "Android preview v$VERSION"
+          git push origin "v$VERSION"

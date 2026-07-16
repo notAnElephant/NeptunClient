@@ -40,6 +40,19 @@ firebase appdistribution:testers:add person@example.com \
 a signed preview APK, downloads the artifact, and distributes it to the Firebase
 tester group. It runs manually and on pushes to `main`.
 
+Each successful deployment gets an annotated `vX.Y.Z` Git tag. By default, the
+workflow finds the latest release tag and increments its patch number. For the
+first tagged deployment, it increments the version in `app.json`.
+
+To choose a version manually, open **Actions → Build and distribute Android
+preview → Run workflow**, enter the desired `X.Y.Z` value in **version**, and
+run it. The value must be newer than both the latest release tag and the version
+in `app.json`. Leave the field empty for an automatic patch bump. The tag is
+created only after Firebase distribution succeeds, so a failed deployment can
+be retried with the same version. The workflow changes `app.json` only in its
+temporary checkout so EAS receives the selected version; it does not commit the
+change back to `main`.
+
 The repository must contain these GitHub Actions secrets:
 
 - `EXPO_TOKEN`: an Expo access token allowed to build

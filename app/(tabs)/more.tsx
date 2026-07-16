@@ -3,6 +3,8 @@ import { usePostHog } from 'posthog-react-native';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '@/components/Screen';
 import { getInstitution } from '@/data/institutions';
@@ -40,7 +42,7 @@ export default function MoreScreen() {
     <View style={styles.account}><View style={styles.avatar}><Ionicons name="person" size={24} color={colors.blue} /></View><View><Text style={styles.accountName}>{session?.userName}</Text><Text style={styles.accountDetail}>{institution?.name}</Text></View></View>
     <Text style={styles.section}>TANULMÁNYOK</Text><SettingRow icon="school-outline" title="Képzés" detail="Az aktív képzés módosítása" onPress={() => router.push('/training?change=1')} /><SettingRow icon="document-text-outline" title="Vizsgák" detail="Közelgő és korábbi vizsgák" onPress={() => router.push('/exams')} />
     <Text style={styles.section}>FIÓK ÉS ADATOK</Text><SettingRow icon="happy-outline" title="Becenév" detail={greetingFor(nickname)} onPress={openNickname} /><SettingRow icon="swap-horizontal-outline" title="Intézmény vagy fiók váltása" onPress={logout} /><SettingRow icon="trash-outline" title="Gyorsítótár törlése" detail="A mentett naptár- és összefoglaló adatok törlése" onPress={async () => { await clearCache(accountKey); posthog.capture('cache_cleared'); }} /><SettingRow icon="shield-checkmark-outline" title="Adatvédelem" detail="A hitelesítési adatok csak ezen az eszközön tárolódnak" onPress={() => {}} /><SettingRow icon="log-out-outline" title="Kijelentkezés" onPress={logout} danger />
-    <Text style={styles.version}>Neptun 0.1.0 · Csak olvasási hozzáférés</Text>
+    <Text style={styles.version}>Neptun {Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '0.1.0'} · Csak olvasási hozzáférés</Text>
   </Screen>
   <Modal visible={nicknameOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setNicknameOpen(false)}><SafeAreaView style={styles.modal}><KeyboardAvoidingView style={styles.modal} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <View style={styles.modalHeader}><Pressable onPress={() => setNicknameOpen(false)}><Text style={styles.cancel}>Mégse</Text></Pressable><Text style={styles.modalTitle}>Becenév</Text><Pressable disabled={isSaving || !nicknameDraft.trim()} onPress={save}><Text style={[styles.save, (isSaving || !nicknameDraft.trim()) && styles.disabled]}>Mentés</Text></Pressable></View>
