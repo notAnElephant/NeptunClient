@@ -10,6 +10,7 @@ import { DemoProvider } from '@/data/providers/demo';
 import { ProviderError } from '@/data/errors';
 import { recordElteLoginDiagnostic } from '@/data/elteLoginDiagnostics';
 import { institutionAnalyticsProperties } from '@/config/analytics';
+import { clearCalendarWidgets } from '@/widgets/calendarWidgetSync';
 
 type AuthFlow =
   | { state: 'idle' }
@@ -281,6 +282,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     const accountKey = session ? `${session.institutionId}:${session.userName}` : undefined;
     if (provider && session) await provider.logout(session).catch(() => undefined);
     if (accountKey) await clearCache(accountKey);
+    await clearCalendarWidgets().catch(() => undefined);
     await clearSecureSession();
     posthog.reset();
     setSession(null);

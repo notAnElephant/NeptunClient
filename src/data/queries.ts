@@ -6,6 +6,8 @@ import { calendarGridRange } from './date';
 import { ProviderError } from './errors';
 import { matchesSearch } from './search';
 import { captureFeatureUsed } from '@/config/analytics';
+import { posthog } from '@/config/posthog';
+import { syncCalendarWidgets } from '@/widgets/calendarWidgetSync';
 
 function useProvider() {
   const { provider, session, withAuthentication } = useSession();
@@ -34,7 +36,7 @@ export function useCalendar(center = new Date()) {
   return useQuery({
     queryKey: ['calendar', session.institutionId, session.activeTrainingId, range.from, range.to],
     queryFn: async () => {
-      try { const data = await withAuthentication((provider) => provider.getCalendar({ ...range, trainingId: session.activeTrainingId })); captureFeatureUsed(session, 'calendar'); await writeCache(accountKey, 'calendar', data); return { data, cachedAt: null as string | null }; }
+      try { const data = await withAuthentication((provider) => provider.getCalendar({ ...range, trainingId: session.activeTrainingId })); captureFeatureUsed(session, 'calendar'); await writeCache(accountKey, 'calendar', data); void syncCalendarWidgets(data).then(() => posthog.capture('widget_data_updated', { event_count: data.length })).catch((error) => posthog.captureException(error instanceof Error ? error : new Error(String(error)))); return { data, cachedAt: null as string | null }; }
       catch (error) { if (error instanceof ProviderError && error.code === 'authentication') throw error; const cached = await readCache<CalendarEvent[]>(accountKey, 'calendar'); if (cached) return { data: cached.data, cachedAt: cached.savedAt }; throw error; }
     }, staleTime: 5 * 60_000,
   });

@@ -1,7 +1,38 @@
+const calendarWidget = {
+  name: 'CalendarWidget',
+  displayName: 'Neptun naptár',
+  description: 'A következő órák és vizsgák gyors áttekintése.',
+  supportedFamilies: ['systemSmall', 'systemMedium'],
+  contentMarginsDisabled: false,
+  ios: {
+    supportedFamilies: ['systemSmall', 'systemMedium'],
+  },
+  android: null,
+}
+
 export default ({ config }) => ({
   ...config,
   plugins: [
     ...(config.plugins ?? []),
+    ['expo-widgets', {
+      groupIdentifier: 'group.hu.neptun.companion',
+      widgets: [calendarWidget],
+    }],
+    ['react-native-android-widget', {
+      widgets: [{
+        name: 'CalendarWidget',
+        label: 'Neptun naptár',
+        description: 'A következő órák és vizsgák gyors áttekintése.',
+        minWidth: '110dp',
+        minHeight: '110dp',
+        targetCellWidth: 2,
+        targetCellHeight: 2,
+        maxResizeWidth: '320dp',
+        maxResizeHeight: '180dp',
+        resizeMode: 'horizontal',
+        updatePeriodMillis: 1800000,
+      }],
+    }],
     ...(process.env.POSTHOG_CLI_API_KEY
       ? [['posthog-react-native/expo', { skipOnConflict: true, uploadNativeSymbols: true }]]
       : []),
