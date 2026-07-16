@@ -35,7 +35,7 @@ export function AndroidCalendarWidget({ data, width }: Props) {
       {visibleEvents.length === 0 ? (
         <FlexWidget style={{ width: 'match_parent', flexDirection: 'column', flexGap: 4 }}>
           <TextWidget text="Nincs közelgő esemény" style={{ color: '#172033', fontSize: 16, fontWeight: 'bold' }} maxLines={2} />
-          <TextWidget text="Nyisd meg az appot a frissítéshez." style={{ color: '#657083', fontSize: 11 }} maxLines={2} />
+          <TextWidget text="A naptárad most üres." style={{ color: '#657083', fontSize: 11 }} maxLines={2} />
         </FlexWidget>
       ) : visibleEvents.map((event) => (
         <FlexWidget key={event.id} style={{ width: 'match_parent', flexDirection: 'column', flexGap: 2 }}>

@@ -23,21 +23,41 @@ function CalendarWidgetView(props: CalendarWidgetProps, environment: WidgetEnvir
         <Text modifiers={[font({ size: 10 }), foregroundStyle('#657083')]}>{props.updatedAtLabel}</Text>
       </HStack>
 
-      {visibleEvents.length === 0 ? (
+      {visibleEvents[0] ? (
+        <VStack alignment="leading" spacing={2}>
+          <HStack spacing={6}>
+            <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle('#1B4D9B')]}>{visibleEvents[0].dateLabel}</Text>
+            <Text modifiers={[font({ size: 11 }), foregroundStyle('#657083')]}>{visibleEvents[0].timeLabel}</Text>
+          </HStack>
+          <Text modifiers={[font({ size: 14, weight: 'semibold' }), foregroundStyle('#172033'), lineLimit(1)]}>{visibleEvents[0].title}</Text>
+          {visibleEvents[0].location ? <Text modifiers={[font({ size: 10 }), foregroundStyle('#657083'), lineLimit(1)]}>{visibleEvents[0].location}</Text> : null}
+        </VStack>
+      ) : (
         <VStack alignment="leading" spacing={4}>
           <Text modifiers={[font({ size: 16, weight: 'semibold' }), foregroundStyle('#172033')]}>Nincs közelgő esemény</Text>
-          <Text modifiers={[font({ size: 12 }), foregroundStyle('#657083')]}>Nyisd meg az appot a frissítéshez.</Text>
+          <Text modifiers={[font({ size: 12 }), foregroundStyle('#657083')]}>A naptárad most üres.</Text>
         </VStack>
-      ) : visibleEvents.map((event) => (
-        <VStack key={event.id} alignment="leading" spacing={2}>
+      )}
+      {visibleEvents[1] ? (
+        <VStack alignment="leading" spacing={2}>
           <HStack spacing={6}>
-            <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle('#1B4D9B')]}>{event.dateLabel}</Text>
-            <Text modifiers={[font({ size: 11 }), foregroundStyle('#657083')]}>{event.timeLabel}</Text>
+            <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle('#1B4D9B')]}>{visibleEvents[1].dateLabel}</Text>
+            <Text modifiers={[font({ size: 11 }), foregroundStyle('#657083')]}>{visibleEvents[1].timeLabel}</Text>
           </HStack>
-          <Text modifiers={[font({ size: 14, weight: 'semibold' }), foregroundStyle('#172033'), lineLimit(1)]}>{event.title}</Text>
-          {event.location ? <Text modifiers={[font({ size: 10 }), foregroundStyle('#657083'), lineLimit(1)]}>{event.location}</Text> : null}
+          <Text modifiers={[font({ size: 14, weight: 'semibold' }), foregroundStyle('#172033'), lineLimit(1)]}>{visibleEvents[1].title}</Text>
+          {visibleEvents[1].location ? <Text modifiers={[font({ size: 10 }), foregroundStyle('#657083'), lineLimit(1)]}>{visibleEvents[1].location}</Text> : null}
         </VStack>
-      ))}
+      ) : null}
+      {visibleEvents[2] ? (
+        <VStack alignment="leading" spacing={2}>
+          <HStack spacing={6}>
+            <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle('#1B4D9B')]}>{visibleEvents[2].dateLabel}</Text>
+            <Text modifiers={[font({ size: 11 }), foregroundStyle('#657083')]}>{visibleEvents[2].timeLabel}</Text>
+          </HStack>
+          <Text modifiers={[font({ size: 14, weight: 'semibold' }), foregroundStyle('#172033'), lineLimit(1)]}>{visibleEvents[2].title}</Text>
+          {visibleEvents[2].location ? <Text modifiers={[font({ size: 10 }), foregroundStyle('#657083'), lineLimit(1)]}>{visibleEvents[2].location}</Text> : null}
+        </VStack>
+      ) : null}
       <Spacer minLength={0} />
     </VStack>
   );

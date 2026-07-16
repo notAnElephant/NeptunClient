@@ -42,11 +42,11 @@ export function createCalendarWidgetProps(
     .filter((event) => new Date(event.endsAt).getTime() > reference.getTime())
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
     .slice(0, limit)
-    .map((event) => {
+    .map((event, index) => {
       const start = new Date(event.startsAt);
       const end = new Date(event.endsAt);
       return {
-        id: event.id,
+        id: event.id || `${event.startsAt}:${event.endsAt}:${event.title}:${index}`,
         title: event.title,
         dateLabel: dateLabel(start, reference),
         timeLabel: `${timeFormatter.format(start)}–${timeFormatter.format(end)}`,

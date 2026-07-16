@@ -15,6 +15,16 @@ describe('calendar widget data', () => {
     expect(result.events[1]?.dateLabel).toBe('Holnap');
   });
 
+  it('returns an empty widget state when no events are upcoming', () => {
+    const result = createCalendarWidgetProps(events, new Date('2026-07-18T10:00:00+02:00'));
+    expect(result.events).toEqual([]);
+  });
+
+  it('creates a stable fallback key when the provider omits an event ID', () => {
+    const result = createCalendarWidgetProps([{ ...events[1], id: '' }], new Date('2026-07-16T10:00:00+02:00'));
+    expect(result.events[0]?.id).toContain('Algorithms');
+  });
+
   it('advances the timeline after events finish', () => {
     const timeline = createCalendarWidgetTimeline(events, new Date('2026-07-16T10:00:00+02:00'));
     expect(timeline[0]?.props.events[0]?.id).toBe('next');
