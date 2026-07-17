@@ -16,6 +16,21 @@ describe('modern Neptun contract normalization', () => {
     }).type).toBe('exam');
   });
 
+  it('creates stable distinct identifiers when calendar events have no source identifier', () => {
+    const shared = {
+      eventTypeId: 'StudyPeriod',
+      startDate: '2026-08-26T14:00:00Z',
+      endDate: '2026-08-26T15:50:00Z',
+    };
+    const courseRegistration = mapModernCalendarEvent({ ...shared, name: 'Kedvezményezett kurzusjelentkezés OMHV' });
+    const subjectRegistration = mapModernCalendarEvent({ ...shared, name: 'Kedvezményezett tárgyjelentkezés OMHV' });
+
+    expect(courseRegistration.id).not.toBe('');
+    expect(subjectRegistration.id).not.toBe('');
+    expect(courseRegistration.id).not.toBe(subjectRegistration.id);
+    expect(mapModernCalendarEvent({ ...shared, name: courseRegistration.title }).id).toBe(courseRegistration.id);
+  });
+
   it('maps the message detail envelope and latest post', () => {
     const result = mapModernMessageDetail('message-1', {
       messageData: { subject: 'Important notice' },

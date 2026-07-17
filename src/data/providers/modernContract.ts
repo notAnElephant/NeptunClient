@@ -17,12 +17,17 @@ const calendarIdKeys: Record<string, string[]> = {
 export function mapModernCalendarEvent(value: unknown): CalendarEvent {
   const row = asRecord(value);
   const rawType = stringValue(row, 'eventTypeId', 'calendarEventType', 'type').toLowerCase();
+  const title = stringValue(row, 'name', 'title');
+  const startsAt = parseNeptunDate(row.startDate ?? row.start);
+  const endsAt = parseNeptunDate(row.endDate ?? row.end);
+  const location = stringValue(row, 'location', 'roomName', 'room');
+  const sourceId = stringValue(row, ...(calendarIdKeys[rawType] ?? []), 'calendarId', 'id', 'calendarEventId');
   return {
-    id: stringValue(row, ...(calendarIdKeys[rawType] ?? []), 'calendarId', 'id', 'calendarEventId'),
-    title: stringValue(row, 'name', 'title'),
-    startsAt: parseNeptunDate(row.startDate ?? row.start),
-    endsAt: parseNeptunDate(row.endDate ?? row.end),
-    location: stringValue(row, 'location', 'roomName', 'room'),
+    id: sourceId || `${rawType}:${startsAt}:${endsAt}:${title}:${location}`,
+    title,
+    startsAt,
+    endsAt,
+    location,
     description: stringValue(row, 'description'),
     type: rawType === 'exam' ? 'exam' : rawType === 'task' ? 'task' : rawType === 'class' ? 'course' : 'other',
   };
