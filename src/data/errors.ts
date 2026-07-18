@@ -1,8 +1,20 @@
+import type { LoginDiagnosticStage, StructuralFailureReason } from './loginDiagnosticMetadata';
+
 export class ProviderError extends Error {
-  constructor(public readonly code: 'authentication' | 'connectivity' | 'unsupported-contract' | 'malformed-response' | 'server', message: string, public readonly status?: number) {
+  constructor(
+    public readonly code: 'authentication' | 'connectivity' | 'unsupported-contract' | 'malformed-response' | 'server',
+    message: string,
+    public readonly status?: number,
+    public readonly structuralReason?: StructuralFailureReason,
+    public readonly diagnosticStage?: LoginDiagnosticStage,
+  ) {
     super(message);
     this.name = 'ProviderError';
   }
+}
+
+export function isStructuralProviderError(error: unknown): error is ProviderError & { structuralReason: StructuralFailureReason } {
+  return error instanceof ProviderError && error.structuralReason !== undefined;
 }
 
 export async function checkedJson(response: Response): Promise<unknown> {

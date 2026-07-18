@@ -40,6 +40,29 @@ describe('ModernNeptunProvider requests', () => {
     expect(result).toEqual({ state: 'captchaRequired', identifier: 'captcha-1', imageUrl: 'data:image/png;base64,aW1hZ2U=' });
   });
 
+  it('retains the login flow through a two-factor continuation', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ isTwoFactorRequired: true, challengeId: 'challenge-1' }))
+      .mockResolvedValueOnce(jsonResponse({ accessToken: 'two-factor-token' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new ModernNeptunProvider(institution);
+    await expect(provider.authenticate({ institution, userName: 'abc123', password: 'secret' })).resolves.toEqual({ state: 'twoFactorRequired', challengeId: 'challenge-1' });
+    await expect(provider.continueTwoFactor({ code: '123456' })).resolves.toMatchObject({ state: 'authenticated', session: { accessToken: 'two-factor-token' } });
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ body: expect.stringContaining('123456') });
+  });
+
+  it('classifies an otherwise empty login contract as structural', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({})));
+    await expect(new ModernNeptunProvider(institution).authenticate({ institution, userName: 'abc123', password: 'secret' }))
+      .rejects.toMatchObject({ code: 'malformed-response', structuralReason: 'missing-required-fields' });
+  });
+
+  it('keeps a server-provided credential error ordinary and local', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ errorMessage: 'Hibás belépési adatok.' })));
+    await expect(new ModernNeptunProvider(institution).authenticate({ institution, userName: 'abc123', password: 'secret' }))
+      .rejects.toMatchObject({ code: 'authentication', message: 'Hibás belépési adatok.', structuralReason: undefined });
+  });
+
   it('exchanges an ELTE outer-login GUID and identifies the signed-in account', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ accessToken: 'elte-token' }))

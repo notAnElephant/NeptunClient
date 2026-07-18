@@ -6,6 +6,8 @@ import { mapModernMessageSummary } from './modernMessages';
 import { mapModernCalendarEvent, mapModernExams, mapModernMessageDetail } from './modernContract';
 import { recordElteLoginDiagnostic } from '../elteLoginDiagnostics';
 import { validateElteServiceUrl } from '../elteExternalAuth';
+import { diagnosticJsonRequest, missingRequiredFields } from '../authDiagnosticRequest';
+import type { LoginDiagnosticRecorder, LoginDiagnosticStage } from '../loginDiagnostics';
 
 type PendingLogin = { input: LoginInput; captchaIdentifier?: string; captcha?: string; token?: string };
 type QueryValue = string | number | boolean | readonly string[] | undefined;
@@ -15,13 +17,13 @@ export class ModernNeptunProvider implements NeptunProvider {
   private serviceUrl?: string;
   private pending?: PendingLogin;
 
-  constructor(private readonly institution: Institution) {}
+  constructor(private readonly institution: Institution, private readonly diagnostics?: LoginDiagnosticRecorder) {}
 
   hydrate(session: Session, accessToken?: string): void { this.accessToken = accessToken; this.serviceUrl = session.serviceUrl; }
 
   private get baseUrl(): string {
     const url = this.serviceUrl ?? this.institution.url;
-    if (!url) throw new ProviderError('unsupported-contract', 'Az intézmény szolgáltatási címe hiányzik.');
+    if (!url) throw new ProviderError('unsupported-contract', 'Az intézmény szolgáltatási címe hiányzik.', undefined, 'missing-endpoint');
     return url.replace(/\/$/, '');
   }
 
@@ -37,23 +39,33 @@ export class ModernNeptunProvider implements NeptunProvider {
   }
 
   private async submitLogin(pending: PendingLogin): Promise<AuthResult> {
-    const response = await safeFetch(`${this.baseUrl}/Account/Authenticate`, {
+    const stage: LoginDiagnosticStage = pending.token ? 'two-factor' : pending.captchaIdentifier ? 'captcha' : 'initial-login';
+    const loginUrl = `${this.baseUrl}/Account/Authenticate`;
+    const loginPayload = await diagnosticJsonRequest({ recorder: this.diagnostics, stage, operation: 'modern-authenticate', url: loginUrl, method: 'POST', init: {
       method: 'POST', credentials: 'include', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ userName: pending.input.userName.trim().toUpperCase(), password: pending.input.password, subtituteGUID: '', captcha: pending.captcha ?? '', captchaIdentifier: pending.captchaIdentifier ?? '', token: pending.token ?? '', LCID: 1038 }),
-    });
-    const data = asRecord(unwrapData(await checkedJson(response)));
+    } });
+    let data: Record<string, unknown>;
+    try { data = asRecord(unwrapData(loginPayload)); }
+    catch { throw missingRequiredFields(this.diagnostics, stage, 'modern-authenticate', 'A Neptun bejelentkezési válasza hiányos.'); }
     if (booleanValue(data, 'isCaptchaRequired')) {
-      const captchaResponse = await safeFetch(`${this.baseUrl}/captcha/image`, { headers: { Accept: 'application/json' }, credentials: 'include', redirect: 'manual' });
-      const captcha = asRecord(unwrapData(await checkedJson(captchaResponse)));
+      const captchaPayload = await diagnosticJsonRequest({ recorder: this.diagnostics, stage, operation: 'captcha-image', url: `${this.baseUrl}/captcha/image`, method: 'GET', init: { headers: { Accept: 'application/json' }, credentials: 'include', redirect: 'manual' } });
+      let captcha: Record<string, unknown>;
+      try { captcha = asRecord(unwrapData(captchaPayload)); }
+      catch { throw missingRequiredFields(this.diagnostics, stage, 'captcha-image', 'A Neptun CAPTCHA-válasza hiányos.'); }
       const identifier = stringValue(captcha, 'identifier');
       const content = stringValue(captcha, 'content');
-      if (!identifier || !content) throw new ProviderError('malformed-response', 'A Neptun CAPTCHA-válasza hiányos.');
+      if (!identifier || !content) throw missingRequiredFields(this.diagnostics, stage, 'captcha-image', 'A Neptun CAPTCHA-válasza hiányos.');
       this.pending = { ...pending, captchaIdentifier: identifier };
       return { state: 'captchaRequired', identifier, imageUrl: content.startsWith('data:') ? content : `data:image/png;base64,${content}` };
     }
     if (booleanValue(data, 'isTwoFactorRequired')) { this.pending = pending; return { state: 'twoFactorRequired', challengeId: stringValue(data, 'challengeId') || undefined }; }
     const accessToken = stringValue(data, 'accessToken');
-    if (!accessToken) throw new ProviderError('authentication', stringValue(data, 'errorMessage', 'message') || 'Sikertelen bejelentkezés.');
+    if (!accessToken) {
+      const localMessage = stringValue(data, 'errorMessage', 'message');
+      if (localMessage) throw new ProviderError('authentication', localMessage);
+      throw missingRequiredFields(this.diagnostics, stage, 'modern-authenticate', 'A Neptun bejelentkezési válaszából hiányzik a hozzáférési állapot.');
+    }
     this.accessToken = accessToken;
     this.pending = undefined;
     return { state: 'authenticated', session: { institutionId: this.institution.id, provider: 'modern', userName: pending.input.userName.trim().toUpperCase(), accessToken, expiresAt: stringValue(data, 'refreshTokenExpiration') || undefined } };
@@ -70,24 +82,30 @@ export class ModernNeptunProvider implements NeptunProvider {
     if (!serviceUrl) throw new ProviderError('authentication', 'Az ELTE bejelentkezési visszahívási címe érvénytelen.');
     this.serviceUrl = serviceUrl;
     recordElteLoginDiagnostic('exchange_started');
-    const response = await safeFetch(`${serviceUrl}/Account/OuterLogin`, {
+    const exchangePayload = await diagnosticJsonRequest({ recorder: this.diagnostics, stage: 'external-exchange', operation: 'external-token-exchange', url: `${serviceUrl}/Account/OuterLogin`, method: 'POST', init: {
       method: 'POST', credentials: 'include', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ guid: input.guid }),
-    });
-    recordElteLoginDiagnostic('exchange_response', { status: response.status, contentType: response.headers.get('content-type') });
-    const data = asRecord(unwrapData(await checkedJson(response)));
+    } });
+    let data: Record<string, unknown>;
+    try { data = asRecord(unwrapData(exchangePayload)); }
+    catch { throw missingRequiredFields(this.diagnostics, 'external-exchange', 'external-token-exchange', 'A külső Neptun-válasz hiányos.'); }
     const accessToken = stringValue(data, 'accessToken');
     recordElteLoginDiagnostic('exchange_parsed', { hasAccessToken: Boolean(accessToken) });
-    if (!accessToken) throw new ProviderError('authentication', 'Az ELTE bejelentkezési munkamenete nem váltható Neptun-hozzáférésre.');
+    if (!accessToken) {
+      const localMessage = stringValue(data, 'errorMessage', 'message');
+      if (localMessage) throw new ProviderError('authentication', localMessage);
+      throw missingRequiredFields(this.diagnostics, 'external-exchange', 'external-token-exchange', 'A külső Neptun-válaszból hiányzik a hozzáférési állapot.');
+    }
 
-    const userInfoResponse = await safeFetch(`${this.baseUrl}/UserInfo`, {
+    const userInfoPayload = await diagnosticJsonRequest({ recorder: this.diagnostics, stage: 'user-info', operation: 'external-user-info', url: `${this.baseUrl}/UserInfo`, method: 'GET', init: {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }, credentials: 'include', redirect: 'manual',
-    });
-    recordElteLoginDiagnostic('user_info_response', { status: userInfoResponse.status, contentType: userInfoResponse.headers.get('content-type') });
-    const userInfo = asRecord(unwrapData(await checkedJson(userInfoResponse)));
+    } });
+    let userInfo: Record<string, unknown>;
+    try { userInfo = asRecord(unwrapData(userInfoPayload)); }
+    catch { throw missingRequiredFields(this.diagnostics, 'user-info', 'external-user-info', 'A felhasználói Neptun-válasz hiányos.'); }
     const userName = stringValue(userInfo, 'neptunCode', 'NeptunCode').trim().toUpperCase();
     recordElteLoginDiagnostic('user_info_parsed', { hasUserName: Boolean(userName) });
-    if (!userName) throw new ProviderError('malformed-response', 'Az ELTE Neptun-válaszából hiányzik a Neptun-kód.');
+    if (!userName) throw missingRequiredFields(this.diagnostics, 'user-info', 'external-user-info', 'Az ELTE Neptun-válaszából hiányzik a felhasználói azonosító.');
 
     this.accessToken = accessToken;
     this.pending = undefined;

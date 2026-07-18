@@ -4,6 +4,8 @@ import { checkedJson, ProviderError, safeFetch } from '@/data/errors';
 import { parseNeptunDate, toLegacyDate } from '@/data/date';
 import { matchesSearch } from '@/data/search';
 import { asArray, asRecord, booleanValue, stringValue } from './shared';
+import { diagnosticJsonRequest, missingRequiredFields } from '../authDiagnosticRequest';
+import type { LoginDiagnosticRecorder, LoginDiagnosticStage } from '../loginDiagnostics';
 
 interface LegacyCredentials { userName: string; password: string }
 
@@ -11,29 +13,44 @@ export class LegacyMobileProvider implements NeptunProvider {
   private credentials?: LegacyCredentials;
   private session?: Session;
 
-  constructor(private readonly institution: Institution) {}
+  constructor(private readonly institution: Institution, private readonly diagnostics?: LoginDiagnosticRecorder) {}
 
   hydrate(session: Session, password?: string): void {
     this.session = session;
     if (password) this.credentials = { userName: session.userName, password };
   }
 
-  private async call(operation: string, extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-    if (!this.institution.url) throw new ProviderError('unsupported-contract', 'Ehhez az intézményhez nincs dokumentált Neptun szolgáltatási cím.');
+  private async call(operation: string, extra: Record<string, unknown> = {}, diagnosticStage?: LoginDiagnosticStage): Promise<Record<string, unknown>> {
+    if (!this.institution.url) {
+      if (diagnosticStage) this.diagnostics?.record({ stage: diagnosticStage, operation, method: 'POST', error_code: 'unsupported-contract', reason: 'missing-endpoint' });
+      throw new ProviderError('unsupported-contract', 'Ehhez az intézményhez nincs dokumentált Neptun szolgáltatási cím.', undefined, diagnosticStage ? 'missing-endpoint' : undefined, diagnosticStage);
+    }
     if (!this.credentials) throw new ProviderError('authentication', 'A munkamenet lejárt. Jelentkezz be újra.');
-    const response = await safeFetch(`${this.institution.url.replace(/\/$/, '')}/${operation}`, {
+    const url = `${this.institution.url.replace(/\/$/, '')}/${operation}`;
+    const init: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ UserLogin: this.credentials.userName, Password: this.credentials.password, CurrentPage: 0, LCID: 1038, ...extra }),
-    });
-    const result = asRecord(await checkedJson(response));
+    };
+    const payload = diagnosticStage
+      ? await diagnosticJsonRequest({ recorder: this.diagnostics, stage: diagnosticStage, operation, url, method: 'POST', init })
+      : await checkedJson(await safeFetch(url, init));
+    let result: Record<string, unknown>;
+    try { result = asRecord(payload); }
+    catch {
+      if (diagnosticStage) throw missingRequiredFields(this.diagnostics, diagnosticStage, operation, 'A Neptun bejelentkezési válasza hiányos.');
+      throw new ProviderError('malformed-response', 'A Neptun válasza nem értelmezhető.');
+    }
     if (result.ErrorMessage) throw new ProviderError('server', String(result.ErrorMessage));
     return result;
   }
 
   async authenticate(input: LoginInput): Promise<AuthResult> {
     this.credentials = { userName: input.userName.trim().toUpperCase(), password: input.password };
-    await this.call('GetTrainings');
+    const result = await this.call('GetTrainings', {}, 'initial-login');
+    if (!Array.isArray(result.TrainingList)) {
+      throw missingRequiredFields(this.diagnostics, 'initial-login', 'GetTrainings', 'A Neptun bejelentkezési válaszából hiányzik a képzési lista.');
+    }
     this.session = { institutionId: this.institution.id, provider: 'legacy', userName: this.credentials.userName };
     return { state: 'authenticated', session: this.session };
   }

@@ -1,6 +1,10 @@
-import PostHog from 'posthog-react-native'
+import PostHog, { PostHogPersistedProperty } from 'posthog-react-native'
 import Constants from 'expo-constants'
-import { redactPostHogProperties } from './posthogPrivacy'
+import { Platform } from 'react-native'
+import { getOrCreateAnalyticsInstallationId } from '@/data/diagnosticPreferences'
+import { sanitizePostHogEvent } from './posthogPrivacy'
+import { applyAnonymousAnalyticsIdentity } from './posthogIdentity'
+export { applyAnonymousAnalyticsIdentity } from './posthogIdentity'
 
 const projectToken = Constants.expoConfig?.extra?.posthogProjectKey as string | undefined
 const host = (Constants.expoConfig?.extra?.posthogHost as string) || 'https://eu.i.posthog.com'
@@ -16,7 +20,10 @@ if (!isPostHogConfigured && __DEV__) {
 export const posthog = new PostHog(projectToken || 'placeholder_key', {
   host,
   disabled: !isPostHogConfigured,
-  captureAppLifecycleEvents: true,
+  persistence: Platform.OS === 'web' ? 'memory' : 'file',
+  captureAppLifecycleEvents: false,
+  enableSessionReplay: false,
+  personProfiles: 'never',
   errorTracking: {
     autocapture: {
       uncaughtExceptions: true,
@@ -28,13 +35,13 @@ export const posthog = new PostHog(projectToken || 'placeholder_key', {
   },
   before_send: (event) => {
     if (!event) return null
-    return { ...event, properties: redactPostHogProperties(event.properties) }
+    return sanitizePostHogEvent(event)
   },
   flushAt: 20,
   flushInterval: 10000,
   maxBatchSize: 100,
   maxQueueSize: 1000,
-  preloadFeatureFlags: true,
+  preloadFeatureFlags: false,
   sendFeatureFlagEvent: true,
   featureFlagsRequestTimeoutMs: 10000,
   requestTimeout: 10000,
@@ -43,3 +50,22 @@ export const posthog = new PostHog(projectToken || 'placeholder_key', {
 })
 
 export const isPostHogEnabled = isPostHogConfigured
+
+let initialization: Promise<void> | undefined
+
+export function initializePostHog(): Promise<void> {
+  initialization ??= (async () => {
+    try {
+      const [, installationId] = await Promise.all([posthog.ready(), getOrCreateAnalyticsInstallationId()])
+      applyAnonymousAnalyticsIdentity({
+        getDistinctId: () => posthog.getDistinctId(),
+        reset: () => posthog.reset(),
+        setPersistedProperty: (key, value) => posthog.setPersistedProperty(key as PostHogPersistedProperty, value),
+      }, installationId)
+      posthog.capture('application_opened')
+    } catch {
+      await posthog.optOut().catch(() => undefined)
+    }
+  })()
+  return initialization
+}

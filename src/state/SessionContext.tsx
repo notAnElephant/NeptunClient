@@ -1,23 +1,32 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { posthog } from '@/config/posthog';
-import type { AuthResult, CaptchaInput, ExternalLoginInput, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
+import type { AuthResult, CaptchaInput, ExternalLoginInput, Institution, LoginInput, Session, Training, TwoFactorInput } from '@/domain/models';
 import type { NeptunProvider } from '@/domain/provider';
 import { createProvider } from '@/data/providerFactory';
 import { clearSecureSession, loadSecureSession, saveSecureSession, type ProviderSecret } from '@/data/secureSession';
 import { getInstitution } from '@/data/institutions';
 import { clearCache } from '@/data/cache';
 import { DemoProvider } from '@/data/providers/demo';
-import { ProviderError } from '@/data/errors';
+import { isStructuralProviderError, ProviderError } from '@/data/errors';
 import { recordElteLoginDiagnostic } from '@/data/elteLoginDiagnostics';
 import { institutionAnalyticsProperties } from '@/config/analytics';
 import { clearCalendarWidgets } from '@/widgets/calendarWidgetSync';
+import { getDiagnosticConsent, setDiagnosticConsent, type DiagnosticConsent } from '@/data/diagnosticPreferences';
+import { deriveCompatibilityProbeUrl, LoginDiagnosticRecorder, type LoginDiagnosticStage } from '@/data/loginDiagnostics';
+import { resolveInstitutionAuth, waitForUniversityAuthRegistry, type ResolvedInstitutionAuth } from '@/data/universityAuthRegistry';
+import { shouldExposeCompatibilityFailure } from '@/data/compatibilityExperience';
+
+interface CompatibilityFailure {
+  consent: DiagnosticConsent;
+  probeUrl: string | null;
+}
 
 type AuthFlow =
   | { state: 'idle' }
   | { state: 'loading' }
   | { state: 'captchaRequired'; identifier: string; imageUrl: string }
   | { state: 'twoFactorRequired'; challengeId?: string }
-  | { state: 'error'; message: string };
+  | { state: 'error'; message: string; compatibility?: CompatibilityFailure };
 
 type ReauthenticationState =
   | { state: 'idle' }
@@ -33,6 +42,10 @@ interface SessionContextValue {
   authFlow: AuthFlow;
   reauthentication: ReauthenticationState;
   loginHint: LoginHint | null;
+  diagnosticConsent: DiagnosticConsent;
+  compatibilityDiagnostics: LoginDiagnosticRecorder | null;
+  prepareExternalLogin(institution: Institution): Promise<void>;
+  cancelExternalLogin(): void;
   login(input: LoginInput): Promise<void>;
   loginExternal(input: ExternalLoginInput): Promise<void>;
   continueCaptcha(input: CaptchaInput): Promise<void>;
@@ -41,6 +54,9 @@ interface SessionContextValue {
   withAuthentication<T>(operation: (provider: NeptunProvider) => Promise<T>): Promise<T>;
   beginManualReauthentication(): Promise<void>;
   logout(): Promise<void>;
+  setDiagnosticConsentForFuture(consent: DiagnosticConsent): Promise<void>;
+  grantCompatibilityDiagnostics(): Promise<void>;
+  denyCompatibilityDiagnostics(): Promise<void>;
   resetAuthFlow(): void;
 }
 
@@ -54,11 +70,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [authFlow, setAuthFlow] = useState<AuthFlow>({ state: 'idle' });
   const [reauthentication, setReauthentication] = useState<ReauthenticationState>({ state: 'idle' });
   const [loginHint, setLoginHint] = useState<LoginHint | null>(null);
+  const [diagnosticConsent, setDiagnosticConsentState] = useState<DiagnosticConsent>('unknown');
+  const [compatibilityDiagnostics, setCompatibilityDiagnostics] = useState<LoginDiagnosticRecorder | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const providerRef = useRef<NeptunProvider | null>(null);
   const secretRef = useRef<ProviderSecret | null>(null);
   const reauthenticationRef = useRef<ReauthenticationState>({ state: 'idle' });
   const recoveryPromiseRef = useRef<Promise<boolean> | null>(null);
+  const diagnosticConsentRef = useRef<DiagnosticConsent>('unknown');
+  const activeDiagnosticsRef = useRef<LoginDiagnosticRecorder | null>(null);
+  const activeResolvedAuthRef = useRef<ResolvedInstitutionAuth | null>(null);
+  const activeLoginInstitutionRef = useRef<Institution | null>(null);
 
   const applyActiveSession = useCallback((nextSession: Session, nextProvider: NeptunProvider, nextSecret: ProviderSecret) => {
     sessionRef.current = nextSession;
@@ -75,13 +97,16 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_DEMO_MODE === 'true') {
-      const demoProvider = new DemoProvider();
-      applyActiveSession({ institutionId: 'FI23344', provider: 'modern', userName: 'ABC123', activeTrainingId: 'training-1' }, demoProvider, { userName: 'ABC123', rememberMe: false });
-      setReady(true);
-      return;
-    }
-    loadSecureSession().then(async (restored) => {
+    (async () => {
+      const storedConsent = await getDiagnosticConsent();
+      diagnosticConsentRef.current = storedConsent;
+      setDiagnosticConsentState(storedConsent);
+      if (process.env.EXPO_PUBLIC_DEMO_MODE === 'true') {
+        const demoProvider = new DemoProvider();
+        applyActiveSession({ institutionId: 'FI23344', provider: 'modern', userName: 'ABC123', activeTrainingId: 'training-1' }, demoProvider, { userName: 'ABC123', rememberMe: false });
+        return;
+      }
+      const restored = await loadSecureSession();
       if (!restored) return;
       const institution = getInstitution(restored.session.institutionId);
       if (!institution) return;
@@ -90,15 +115,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
         if (!(error instanceof ProviderError) || error.code !== 'authentication') throw error;
       });
       applyActiveSession(restored.session, restoredProvider, restored.secret);
-      posthog.identify(restored.session.userName, {
-        $set: institutionAnalyticsProperties(restored.session.institutionId),
-      });
-    }).catch(async () => {
+    })().catch(async () => {
       await clearSecureSession();
     }).finally(() => setReady(true));
   }, [applyActiveSession]);
 
-  const finishAuthentication = useCallback(async (result: AuthResult, activeProvider: NeptunProvider, nextSecret: ProviderSecret) => {
+  const finishAuthentication = useCallback(async (result: AuthResult, activeProvider: NeptunProvider, nextSecret: ProviderSecret, completionStage: LoginDiagnosticStage = 'initial-login') => {
     if (result.state === 'captchaRequired') {
       if (!result.imageUrl) throw new Error('A CAPTCHA-kép hiányzik.');
       setAuthFlow({ state: result.state, identifier: result.identifier, imageUrl: result.imageUrl });
@@ -111,57 +133,136 @@ export function SessionProvider({ children }: PropsWithChildren) {
     const persistedSecret = { ...nextSecret, accessToken: result.session.accessToken };
     await saveSecureSession(result.session, persistedSecret);
     applyActiveSession(result.session, activeProvider, persistedSecret);
-    posthog.identify(result.session.userName, {
-      $set: institutionAnalyticsProperties(result.session.institutionId),
-      $set_once: { first_login_date: new Date().toISOString() },
-    });
+    const resolved = activeResolvedAuthRef.current;
     posthog.capture('user_logged_in', {
       ...institutionAnalyticsProperties(result.session.institutionId),
       provider: result.session.provider,
+      strategy: resolved?.strategy ?? 'unknown',
+      config_revision: resolved?.revision ?? 'unknown',
     });
+    activeDiagnosticsRef.current?.record({ stage: completionStage, operation: 'authentication-complete' });
+    if (diagnosticConsentRef.current === 'unknown') activeDiagnosticsRef.current?.discardBuffered();
+    activeDiagnosticsRef.current = null;
+    activeResolvedAuthRef.current = null;
+    activeLoginInstitutionRef.current = null;
+    setCompatibilityDiagnostics(null);
     setAuthFlow({ state: 'idle' });
     setLoginHint(null);
     setReauthenticationState({ state: 'idle' });
   }, [applyActiveSession, setReauthenticationState]);
 
+  const handleLoginFailure = useCallback((error: unknown, fallbackStage: LoginDiagnosticStage, fallbackMessage: string) => {
+    const recorder = activeDiagnosticsRef.current;
+    const resolved = activeResolvedAuthRef.current;
+    const institution = activeLoginInstitutionRef.current;
+    const structural = isStructuralProviderError(error);
+    if (structural) {
+      recorder?.recordStructuralFailure(error.diagnosticStage ?? fallbackStage, error.structuralReason, error.code, error.status);
+    }
+    posthog.capture('login_failed', {
+      ...(institution ? institutionAnalyticsProperties(institution.id) : {}),
+      error_code: error instanceof ProviderError ? error.code : 'unknown',
+      structural,
+      strategy: resolved?.strategy ?? 'unknown',
+      support_status: resolved?.status ?? 'unknown',
+    });
+
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    if (shouldExposeCompatibilityFailure(structural, resolved?.status, diagnosticConsentRef.current)) {
+      const probeUrl = deriveCompatibilityProbeUrl(institution?.url ?? null);
+      if (!probeUrl) recorder?.record({
+        stage: 'compatibility-probe',
+        operation: 'probe-availability',
+        error_code: 'unsupported-contract',
+        reason: 'invalid-url',
+      });
+      setCompatibilityDiagnostics(recorder);
+      setAuthFlow({ state: 'error', message, compatibility: { consent: diagnosticConsentRef.current, probeUrl } });
+      return;
+    }
+
+    if (diagnosticConsentRef.current === 'unknown') recorder?.discardBuffered();
+    activeDiagnosticsRef.current = null;
+    activeResolvedAuthRef.current = null;
+    activeLoginInstitutionRef.current = null;
+    setCompatibilityDiagnostics(null);
+    setAuthFlow({ state: 'error', message });
+  }, []);
+
   const login = useCallback(async (input: LoginInput) => {
     setAuthFlow({ state: 'loading' });
-    const activeProvider = createProvider(input.institution);
     const nextSecret: ProviderSecret = { userName: input.userName.trim().toUpperCase(), password: input.password, rememberMe: input.rememberMe === true };
-    providerRef.current = activeProvider;
-    secretRef.current = nextSecret;
-    setProvider(activeProvider);
-    setSecret(nextSecret);
-    try { await finishAuthentication(await activeProvider.authenticate(input), activeProvider, nextSecret); }
-    catch (error) {
-      posthog.captureException(error instanceof Error ? error : new Error(String(error)));
-      posthog.capture('login_failed', institutionAnalyticsProperties(input.institution.id));
-      setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Sikertelen bejelentkezés.' });
+    try {
+      activeDiagnosticsRef.current?.discardBuffered();
+      await waitForUniversityAuthRegistry();
+      const resolved = resolveInstitutionAuth(input.institution);
+      const recorder = await LoginDiagnosticRecorder.create(resolved, diagnosticConsentRef.current, posthog);
+      const activeProvider = createProvider(input.institution, undefined, { diagnostics: recorder, resolvedAuth: resolved });
+      activeDiagnosticsRef.current = recorder;
+      activeResolvedAuthRef.current = resolved;
+      activeLoginInstitutionRef.current = input.institution;
+      setCompatibilityDiagnostics(null);
+      providerRef.current = activeProvider;
+      secretRef.current = nextSecret;
+      setProvider(activeProvider);
+      setSecret(nextSecret);
+      await finishAuthentication(await activeProvider.authenticate(input), activeProvider, nextSecret);
     }
-  }, [finishAuthentication]);
+    catch (error) {
+      handleLoginFailure(error, 'initial-login', 'Sikertelen bejelentkezés.');
+    }
+  }, [finishAuthentication, handleLoginFailure]);
+
+  const prepareExternalLogin = useCallback(async (institution: Institution) => {
+    activeDiagnosticsRef.current?.discardBuffered();
+    await waitForUniversityAuthRegistry();
+    const resolved = resolveInstitutionAuth(institution);
+    const recorder = await LoginDiagnosticRecorder.create(resolved, diagnosticConsentRef.current, posthog);
+    activeDiagnosticsRef.current = recorder;
+    activeResolvedAuthRef.current = resolved;
+    activeLoginInstitutionRef.current = institution;
+    setCompatibilityDiagnostics(null);
+  }, []);
+
+  const cancelExternalLogin = useCallback(() => {
+    if (diagnosticConsentRef.current === 'unknown') activeDiagnosticsRef.current?.discardBuffered();
+    activeDiagnosticsRef.current = null;
+    activeResolvedAuthRef.current = null;
+    activeLoginInstitutionRef.current = null;
+    setCompatibilityDiagnostics(null);
+  }, []);
 
   const loginExternal = useCallback(async (input: ExternalLoginInput) => {
     setAuthFlow({ state: 'loading' });
-    const activeProvider = createProvider(input.institution);
-    providerRef.current = activeProvider;
-    setProvider(activeProvider);
     try {
+      let resolved = activeResolvedAuthRef.current;
+      let recorder = activeDiagnosticsRef.current;
+      if (!resolved || !recorder || activeLoginInstitutionRef.current?.id !== input.institution.id) {
+        await waitForUniversityAuthRegistry();
+        resolved = resolveInstitutionAuth(input.institution);
+        recorder = await LoginDiagnosticRecorder.create(resolved, diagnosticConsentRef.current, posthog);
+      }
+      const activeProvider = createProvider(input.institution, undefined, { diagnostics: recorder, resolvedAuth: resolved });
+      activeDiagnosticsRef.current = recorder;
+      activeResolvedAuthRef.current = resolved;
+      activeLoginInstitutionRef.current = input.institution;
+      setCompatibilityDiagnostics(null);
+      providerRef.current = activeProvider;
+      setProvider(activeProvider);
       const result = await activeProvider.authenticateExternal(input);
       if (result.state !== 'authenticated') throw new ProviderError('authentication', 'Az ELTE bejelentkezése nem fejeződött be.');
       const nextSecret: ProviderSecret = { userName: result.session.userName, rememberMe: input.rememberMe === true };
       secretRef.current = nextSecret;
       setSecret(nextSecret);
-      await finishAuthentication(result, activeProvider, nextSecret);
+      await finishAuthentication(result, activeProvider, nextSecret, 'user-info');
       recordElteLoginDiagnostic('app_session_created');
     } catch (error) {
       recordElteLoginDiagnostic('app_login_failed', {
         errorType: error instanceof ProviderError ? error.code : error instanceof Error ? error.name : 'unknown',
       });
-      posthog.captureException(error instanceof Error ? error : new Error(String(error)));
-      posthog.capture('login_failed', institutionAnalyticsProperties(input.institution.id));
-      setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'Az ELTE bejelentkezése sikertelen.' });
+      handleLoginFailure(error, 'external-exchange', 'A külső bejelentkezés sikertelen.');
     }
-  }, [finishAuthentication]);
+  }, [finishAuthentication, handleLoginFailure]);
 
   const recoverAuthentication = useCallback((): Promise<boolean> => {
     if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
@@ -239,16 +340,16 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const continueCaptcha = useCallback(async (input: CaptchaInput) => {
     if (!provider || !secret) return;
     setAuthFlow({ state: 'loading' });
-    try { await finishAuthentication(await provider.continueCaptcha(input), provider, secret); }
-    catch (error) { setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'A CAPTCHA ellenőrzése sikertelen.' }); }
-  }, [finishAuthentication, provider, secret]);
+    try { await finishAuthentication(await provider.continueCaptcha(input), provider, secret, 'captcha'); }
+    catch (error) { handleLoginFailure(error, 'captcha', 'A CAPTCHA ellenőrzése sikertelen.'); }
+  }, [finishAuthentication, handleLoginFailure, provider, secret]);
 
   const continueTwoFactor = useCallback(async (input: TwoFactorInput) => {
     if (!provider || !secret) return;
     setAuthFlow({ state: 'loading' });
-    try { await finishAuthentication(await provider.continueTwoFactor(input), provider, secret); }
-    catch (error) { setAuthFlow({ state: 'error', message: error instanceof Error ? error.message : 'A kód ellenőrzése sikertelen.' }); }
-  }, [finishAuthentication, provider, secret]);
+    try { await finishAuthentication(await provider.continueTwoFactor(input), provider, secret, 'two-factor'); }
+    catch (error) { handleLoginFailure(error, 'two-factor', 'A kód ellenőrzése sikertelen.'); }
+  }, [finishAuthentication, handleLoginFailure, provider, secret]);
 
   const selectTraining = useCallback(async (training: Training) => {
     if (!session || !secret || !provider) return;
@@ -263,7 +364,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
   const beginManualReauthentication = useCallback(async () => {
     posthog.capture('session_expired');
-    posthog.reset();
     const activeSession = sessionRef.current;
     if (activeSession) setLoginHint({ institutionId: activeSession.institutionId, userName: activeSession.userName });
     await clearSecureSession();
@@ -284,7 +384,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
     if (accountKey) await clearCache(accountKey);
     await clearCalendarWidgets().catch(() => undefined);
     await clearSecureSession();
-    posthog.reset();
     setSession(null);
     setProvider(null);
     setSecret(null);
@@ -296,7 +395,69 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setReauthenticationState({ state: 'idle' });
   }, [provider, session, setReauthenticationState]);
 
-  const value = useMemo(() => ({ ready, session, provider, authFlow, reauthentication, loginHint, login, loginExternal, continueCaptcha, continueTwoFactor, selectTraining, withAuthentication, beginManualReauthentication, logout, resetAuthFlow: () => setAuthFlow({ state: 'idle' }) }), [authFlow, beginManualReauthentication, continueCaptcha, continueTwoFactor, login, loginExternal, loginHint, logout, provider, ready, reauthentication, selectTraining, session, withAuthentication]);
+  const setDiagnosticConsentForFuture = useCallback(async (consent: DiagnosticConsent) => {
+    await setDiagnosticConsent(consent).catch(() => undefined);
+    diagnosticConsentRef.current = consent;
+    setDiagnosticConsentState(consent);
+  }, []);
+
+  const grantCompatibilityDiagnostics = useCallback(async () => {
+    await setDiagnosticConsent('granted').catch(() => undefined);
+    diagnosticConsentRef.current = 'granted';
+    setDiagnosticConsentState('granted');
+    const recorder = activeDiagnosticsRef.current;
+    recorder?.grantConsent();
+    setAuthFlow((current) => current.state === 'error' && current.compatibility
+      ? { ...current, compatibility: { ...current.compatibility, consent: 'granted' } }
+      : current);
+    await recorder?.flush().catch(() => undefined);
+  }, []);
+
+  const denyCompatibilityDiagnostics = useCallback(async () => {
+    await setDiagnosticConsent('denied').catch(() => undefined);
+    diagnosticConsentRef.current = 'denied';
+    setDiagnosticConsentState('denied');
+    activeDiagnosticsRef.current?.denyConsent();
+    activeDiagnosticsRef.current = null;
+    activeResolvedAuthRef.current = null;
+    activeLoginInstitutionRef.current = null;
+    setCompatibilityDiagnostics(null);
+    setAuthFlow((current) => current.state === 'error' ? { state: 'error', message: current.message } : current);
+  }, []);
+
+  const resetAuthFlow = useCallback(() => {
+    if (diagnosticConsentRef.current === 'unknown') activeDiagnosticsRef.current?.discardBuffered();
+    activeDiagnosticsRef.current = null;
+    activeResolvedAuthRef.current = null;
+    activeLoginInstitutionRef.current = null;
+    setCompatibilityDiagnostics(null);
+    setAuthFlow({ state: 'idle' });
+  }, []);
+
+  const value = useMemo(() => ({
+    ready,
+    session,
+    provider,
+    authFlow,
+    reauthentication,
+    loginHint,
+    diagnosticConsent,
+    compatibilityDiagnostics,
+    prepareExternalLogin,
+    cancelExternalLogin,
+    login,
+    loginExternal,
+    continueCaptcha,
+    continueTwoFactor,
+    selectTraining,
+    withAuthentication,
+    beginManualReauthentication,
+    logout,
+    setDiagnosticConsentForFuture,
+    grantCompatibilityDiagnostics,
+    denyCompatibilityDiagnostics,
+    resetAuthFlow,
+  }), [authFlow, beginManualReauthentication, cancelExternalLogin, compatibilityDiagnostics, continueCaptcha, continueTwoFactor, denyCompatibilityDiagnostics, diagnosticConsent, grantCompatibilityDiagnostics, login, loginExternal, loginHint, logout, prepareExternalLogin, provider, ready, reauthentication, resetAuthFlow, selectTraining, session, setDiagnosticConsentForFuture, withAuthentication]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

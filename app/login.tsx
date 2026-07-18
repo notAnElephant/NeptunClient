@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, InputAccessoryView, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,11 +9,31 @@ import { institutionMatchesSearch, institutions } from '@/data/institutions';
 import type { Institution } from '@/domain/models';
 import { useSession } from '@/state/SessionContext';
 import { colors, radius, spacing } from '@/theme';
+import { DiagnosticPrivacyModal } from '@/components/DiagnosticPrivacyModal';
+import { CompatibilityLoginModal } from '@/components/CompatibilityLoginModal';
+import { resolveInstitutionAuth } from '@/data/universityAuthRegistry';
+import { canStartNativeCompatibilityProbe } from '@/data/compatibilityExperience';
 
 const LOGIN_KEYBOARD_ACCESSORY_ID = 'login-keyboard-accessory';
 
 export default function LoginScreen() {
-  const { session, authFlow, loginHint, login, loginExternal, continueCaptcha, continueTwoFactor, resetAuthFlow } = useSession();
+  const {
+    session,
+    authFlow,
+    loginHint,
+    diagnosticConsent,
+    compatibilityDiagnostics,
+    prepareExternalLogin,
+    cancelExternalLogin,
+    login,
+    loginExternal,
+    continueCaptcha,
+    continueTwoFactor,
+    setDiagnosticConsentForFuture,
+    grantCompatibilityDiagnostics,
+    denyCompatibilityDiagnostics,
+    resetAuthFlow,
+  } = useSession();
   const [institution, setInstitution] = useState<Institution>(institutions.find((item) => item.id === loginHint?.institutionId) ?? institutions.find((item) => item.omCode === 'FI23344') ?? institutions[0]);
   const [userName, setUserName] = useState(loginHint?.userName ?? '');
   const [password, setPassword] = useState('');
@@ -24,15 +44,29 @@ export default function LoginScreen() {
   const [externalLoginOpen, setExternalLoginOpen] = useState(false);
   const [externalError, setExternalError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [privacyMode, setPrivacyMode] = useState<'failure' | 'settings' | null>(null);
+  const [compatibilityOpen, setCompatibilityOpen] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
   const filtered = useMemo(() => institutions.filter((item) => institutionMatchesSearch(item, search)), [search]);
 
-  const isExternalLogin = institution.authenticationMode === 'external';
+  const resolvedInstitution = resolveInstitutionAuth(institution).institution;
+  const isExternalLogin = resolvedInstitution.authenticationMode === 'external';
   const isChallenge = authFlow.state === 'captchaRequired' || authFlow.state === 'twoFactorRequired';
+  const compatibility = authFlow.state === 'error' ? authFlow.compatibility : undefined;
+  const nativeCompatibilityAvailable = canStartNativeCompatibilityProbe(Platform.OS, compatibility?.consent ?? 'unknown', compatibility?.probeUrl);
+
+  useEffect(() => {
+    if (compatibility?.consent === 'unknown') setPrivacyMode('failure');
+  }, [compatibility?.consent]);
   const submit = async () => {
     if (isExternalLogin && !isChallenge) {
       setExternalError(null);
-      setExternalLoginOpen(true);
+      try {
+        await prepareExternalLogin(institution);
+        setExternalLoginOpen(true);
+      } catch {
+        setExternalError('A biztonságos bejelentkezés előkészítése sikertelen.');
+      }
       return;
     }
     if ((!isChallenge && (!userName || !password)) || (isChallenge && !challenge)) return;
@@ -50,8 +84,9 @@ export default function LoginScreen() {
 
   const failExternalLogin = useCallback((message: string) => {
     setExternalLoginOpen(false);
+    cancelExternalLogin();
     setExternalError(message);
-  }, []);
+  }, [cancelExternalLogin]);
 
   if (session) return <Redirect href="/" />;
 
@@ -72,11 +107,24 @@ export default function LoginScreen() {
       <View style={styles.input}><Ionicons name="shield-checkmark-outline" size={22} color={colors.muted} /><TextInput value={challenge} onChangeText={setChallenge} style={styles.textField} autoCapitalize="characters" keyboardType={authFlow.state === 'twoFactorRequired' ? 'number-pad' : 'default'} returnKeyType="done" onSubmitEditing={submit} inputAccessoryViewID={Platform.OS === 'ios' ? LOGIN_KEYBOARD_ACCESSORY_ID : undefined} /></View>
     </>}
     {authFlow.state === 'error' ? <Text accessibilityRole="alert" style={styles.error}>{authFlow.message}</Text> : externalError ? <Text accessibilityRole="alert" style={styles.error}>{externalError}</Text> : null}
+    {nativeCompatibilityAvailable ? <Pressable accessibilityRole="button" onPress={() => setCompatibilityOpen(true)} style={styles.compatibilityButton}><Ionicons name="compass-outline" size={20} color={colors.blue} /><Text style={styles.compatibilityText}>Kompatibilitási mód indítása</Text></Pressable> : null}
     <Pressable disabled={authFlow.state === 'loading' || (!isExternalLogin && !isChallenge && (!userName || !password)) || (isChallenge && !challenge)} onPress={submit} style={({ pressed }) => [styles.button, (pressed || authFlow.state === 'loading') && styles.buttonPressed]}>{authFlow.state === 'loading' ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{isChallenge ? 'Ellenőrzés' : isExternalLogin ? 'Tovább az ELTE bejelentkezéshez' : 'Bejelentkezés'}</Text>}</Pressable>
+    <Pressable accessibilityRole="button" onPress={() => setPrivacyMode('settings')} style={styles.privacyLink}><Ionicons name="shield-checkmark-outline" size={17} color={colors.muted} /><Text style={styles.privacyLinkText}>Adatvédelem és diagnosztika</Text></Pressable>
   </ScrollView></KeyboardAvoidingView>
   {Platform.OS === 'ios' ? <InputAccessoryView nativeID={LOGIN_KEYBOARD_ACCESSORY_ID}><View style={styles.keyboardToolbar}><Pressable accessibilityRole="button" onPress={Keyboard.dismiss} hitSlop={12}><Text style={styles.keyboardDone}>Kész</Text></Pressable></View></InputAccessoryView> : null}
   <Modal visible={pickerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPickerOpen(false)}><SafeAreaView style={styles.modal}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Intézmény választása</Text><Pressable onPress={() => setPickerOpen(false)}><Text style={styles.done}>Kész</Text></Pressable></View><View style={styles.search}><Ionicons name="search" size={20} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} style={styles.textField} placeholder="Keresés" /></View><FlatList keyboardShouldPersistTaps="handled" data={filtered} keyExtractor={(item) => item.id} renderItem={({ item }) => <Pressable style={styles.institutionRow} onPress={() => { setInstitution(item); setPickerOpen(false); }}><Text style={styles.institutionName}>{item.name}</Text>{item.id === institution.id ? <Ionicons name="checkmark" size={22} color={colors.blue} /> : null}</Pressable>} /></SafeAreaView></Modal>
-  <ElteLoginModal visible={externalLoginOpen} onCancel={() => setExternalLoginOpen(false)} onComplete={finishExternalLogin} onError={failExternalLogin} />
+  <ElteLoginModal visible={externalLoginOpen} onCancel={() => { setExternalLoginOpen(false); cancelExternalLogin(); }} onComplete={finishExternalLogin} onError={failExternalLogin} />
+  <DiagnosticPrivacyModal
+    visible={privacyMode !== null}
+    mode={privacyMode ?? 'settings'}
+    consent={diagnosticConsent}
+    probeAvailable={Boolean(compatibility?.probeUrl)}
+    onGrant={privacyMode === 'failure' ? grantCompatibilityDiagnostics : () => setDiagnosticConsentForFuture('granted')}
+    onDeny={privacyMode === 'failure' ? async () => { await denyCompatibilityDiagnostics(); setPrivacyMode(null); } : () => setDiagnosticConsentForFuture('denied')}
+    onClose={() => setPrivacyMode(null)}
+    onStartProbe={() => { setPrivacyMode(null); setCompatibilityOpen(true); }}
+  />
+  <CompatibilityLoginModal visible={compatibilityOpen} initialUrl={compatibility?.probeUrl ?? null} diagnostics={compatibilityDiagnostics} onClose={() => setCompatibilityOpen(false)} />
   </SafeAreaView>;
 }
 
@@ -88,6 +136,8 @@ const styles = StyleSheet.create({
   back: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginBottom: spacing.xl }, backText: { color: colors.blue, fontWeight: '600' }, challengeTitle: { color: colors.navy, fontSize: 26, fontWeight: '700', marginBottom: spacing.sm }, help: { color: colors.muted, fontSize: 16, lineHeight: 23, marginBottom: spacing.lg },
   rememberRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg }, rememberText: { flex: 1 }, rememberTitle: { color: colors.text, fontSize: 15, fontWeight: '600' }, rememberHelp: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },
   externalNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, marginTop: spacing.xl, padding: spacing.md, borderRadius: radius.sm, backgroundColor: '#EEF4FF' }, externalNoticeText: { flex: 1 }, externalNoticeTitle: { color: colors.navy, fontSize: 16, fontWeight: '700', marginBottom: spacing.xs }, externalNoticeHelp: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  compatibilityButton: { minHeight: 48, marginTop: spacing.md, borderWidth: 1, borderColor: colors.blue, borderRadius: radius.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md }, compatibilityText: { color: colors.blue, fontSize: 15, fontWeight: '700' },
+  privacyLink: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm }, privacyLinkText: { color: colors.muted, fontSize: 13, fontWeight: '600' },
   keyboardToolbar: { minHeight: 44, paddingHorizontal: spacing.md, backgroundColor: '#F2F4F7', borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }, keyboardDone: { color: colors.blue, fontSize: 16, fontWeight: '700' },
   modal: { flex: 1, backgroundColor: '#fff' }, modalHeader: { height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, modalTitle: { color: colors.navy, fontSize: 20, fontWeight: '700' }, done: { color: colors.blue, fontSize: 16, fontWeight: '600' }, search: { margin: spacing.md, minHeight: 46, backgroundColor: '#F2F4F7', borderRadius: 10, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }, institutionRow: { minHeight: 64, marginLeft: spacing.lg, paddingRight: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }, institutionName: { flex: 1, color: colors.text, fontSize: 16, lineHeight: 21 },
 });

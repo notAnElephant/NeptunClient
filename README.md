@@ -83,6 +83,10 @@ to stay signed in. Otherwise they remain in memory for the current app session.
 Calendar and dashboard summaries may be cached locally; message bodies are not
 persisted.
 
+The privacy-safe unattended authentication compatibility workflow and its
+PostHog setup are documented in
+[`docs/COMPATIBILITY_DIAGNOSTICS.md`](docs/COMPATIBILITY_DIAGNOSTICS.md).
+
 ## API documentation and attribution
 
 The legacy API research and institution list originate from
